@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Tuscany Trail · La tua guida</title>
+<meta name="robots" content="noindex, nofollow"/>
+<meta name="theme-color" content="#ffffff"/>
+<link rel="manifest" href="manifest.webmanifest"/>
+<link rel="icon" href="icons/icon-192.png"/>
+<link rel="apple-touch-icon" href="icons/icon-192.png"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+/* eccezioni locali al design system */
+#demobar{display:none}
+#demobar.visibile{display:flex}
+</style>
+</head>
+<body>
+<div id="phone">
+  <div id="gate" style="display:none"><div class="box">
+    <img class="logomark" src="assets/tt-logo.png" alt="Tuscany Trail"/>
+    <div class="kicker" id="gatekicker"></div>
+    <p id="gatetesto"></p>
+    <input id="gatecode" type="text" placeholder="" autocomplete="off"/>
+    <div class="err" id="gateerr"></div>
+    <button class="btn" id="gatebtn"></button>
+  </div></div>
+  <div id="demobar"><b>PROTOTIPO</b> Vista:
+    <button data-ph="auto">Auto</button><button data-ph="prima">Prima</button>
+    <button data-ph="durante">Durante</button><button data-ph="dopo">Dopo</button>
+  </div>
+  <header>
+    <div class="row">
+      <button id="homelogo" class="avatar" type="button"><img class="logomark" src="assets/tt-logo.png" alt="Tuscany Trail"/></button>
+      <div class="titles">
+        <h1 id="h-title"></h1>
+        <div class="sub" id="h-sub"></div>
+      </div>
+      <div class="langs" id="langsw"></div>
+      <button id="searchbtn"><span class="dot"></span></button>
+    </div>
+  </header>
+
+  <div id="searchov"><div id="searchbox">
+    <input id="searchinput" type="search" placeholder="" autocomplete="off"/>
+    <div id="searchres"></div>
+  </div></div>
+
+  <div id="iosmodal"><div class="box">
+    <h3><span class="e" id="iosmodal-icon"></span> <span id="iostitolo"></span></h3>
+    <div id="iospassi"></div>
+    <div class="btnrow" style="margin-top:12px"><button class="btn" id="iosclose"></button></div>
+  </div></div>
+  <main>
+    <section class="tab" id="tab-home"></section>
+    <section class="tab" id="tab-percorso"></section>
+    <section class="tab" id="tab-info"></section>
+    <section class="tab" id="tab-dormire"></section>
+    <section class="tab" id="tab-live"></section>
+    <div class="sponsor" id="sponsorbar"></div>
+    <div class="legend" id="legenda"></div>
+  </main>
+
+  <nav><div class="in">
+    <button data-tab="home"><span class="e"></span><span class="tlbl" data-t="home"></span></button>
+    <button data-tab="percorso"><span class="e"></span><span class="tlbl" data-t="percorso"></span></button>
+    <button class="fab" data-tab="live"><span class="e"></span><span class="tlbl" data-t="live"></span></button>
+    <button data-tab="info"><span class="e"></span><span class="tlbl" data-t="info"></span></button>
+    <button data-tab="dormire"><span class="e"></span><span class="tlbl" data-t="dormire"></span></button>
+  </div></nav>
+
+  <!-- mappa + altimetria dentro l'app: prima era una pagina esterna senza ritorno -->
+  <div id="routeview">
+    <div id="rv-top">
+      <button id="rv-back"></button>
+      <div id="rv-titles"><b id="rv-nome"></b><span id="rv-stats"></span></div>
+      <a id="rv-gpx" href="#" target="_blank" rel="noopener"></a>
+    </div>
+    <div id="rv-scroll">
+      <div id="rv-map"></div>
+      <div id="rv-filters"></div>
+      <div id="rv-profwrap"><canvas id="rv-prof"></canvas><div id="rv-pins"></div><div id="rv-tip"></div></div>
+      <div id="rv-foot"></div>
+      <div id="rv-listwrap">
+        <h3 id="rv-listtit"></h3>
+        <p id="rv-listintro"></p>
+        <div id="rv-list" class="poilist"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="content.js"></script>
+<script src="tracks.js"></script>
+<script src="poi.js"></script>
+<script src="icons.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+function dataKicker(iso){
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
+}
+const LANG = (localStorage.getItem('tt-lang') === 'en') ? 'en' : 'it';
+const C = CONTENT[LANG];
+const U = C.ui;
+document.documentElement.lang = LANG;
+// riempie i segnaposto | di una stringa del dizionario
+function fmt(tpl){ const p = tpl.split('|'); let o = p[0];
+  for (let i = 1; i < arguments.length; i++) o += arguments[i] + (p[i] || ''); return o; }
+// km e D+ di un percorso, o "in arrivo" quando i dati ufficiali non ci sono ancora
+function statPercorso(p){
+  const parti = [];
+  if (p.km) parti.push(`${p.km} km`);
+  if (p.dplus) parti.push(`${p.dplus} m D+`);
+  return parti.length ? parti.join(' · ') : U.inArrivo.dati;
+}
+const $ = s => document.querySelector(s);
+
+/* Le notifiche push del sistema tg-guida non sono in questa app: si
+   riprendono da advlabbik/tg-guida (index.html + sw.js + supabase/ +
+   staff.html) quando ci sara' un progetto Supabase del Tuscany Trail. */
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- accesso riservato ai partecipanti ---------- */
+/* Deterrente, non sicurezza vera: il codice arriva via email agli iscritti.
+   Nell'area personale su bikeadventureseries.com il login sostituirà tutto questo. */
+const GATE_CODE = 'TUSCANY27'; // ✱ segnaposto — codice reale da decidere prima dell'invio ai partecipanti
+function initGate(){
+  if (localStorage.getItem('tt-access') === GATE_CODE) return;
+  $('#gate').style.display = 'flex';
+  const tryCode = () => {
+    const v = $('#gatecode').value.trim().toUpperCase();
+    if (v === GATE_CODE){
+      localStorage.setItem('tt-access', GATE_CODE);
+      $('#gate').style.display = 'none';
+    } else {
+      $('#gateerr').textContent = U.gate.errore;
+    }
+  };
+  $('#gatebtn').addEventListener('click', tryCode);
+  $('#gatecode').addEventListener('keydown', e => { if (e.key === 'Enter') tryCode(); });
+}
+
+/* ---------- fase (prima / durante / dopo) ---------- */
+function autoPhase(){
+  const today = new Date().toISOString().slice(0,10);
+  if (today >= C.meta.fasi.dopo) return 'dopo';
+  if (today >= C.meta.fasi.durante) return 'durante';
+  return 'prima';
+}
+function phase(){
+  const o = localStorage.getItem('tt-demo-phase');
+  return (o && o !== 'auto') ? o : autoPhase();
+}
+document.querySelectorAll('#demobar button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    localStorage.setItem('tt-demo-phase', b.dataset.ph);
+    paintDemo(); renderHome();
+  });
+});
+function paintDemo(){
+  const cur = localStorage.getItem('tt-demo-phase') || 'auto';
+  document.querySelectorAll('#demobar button').forEach(b=>b.classList.toggle('on', b.dataset.ph===cur));
+}
+// La barra demo (cambio fase) e' riservata al team: si attiva aprendo la guida
+// con ?demo=1 e resta attiva su quel dispositivo. I partecipanti non la vedono.
+if (new URLSearchParams(location.search).has('demo')) localStorage.setItem('tt-demo-visible', '1');
+if (localStorage.getItem('tt-demo-visible')) $('#demobar').classList.add('visibile');
+else localStorage.removeItem('tt-demo-phase');
+
+/* ---------- installa in home ---------- */
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  maybeShowInstall();
+});
+function isStandalone(){
+  return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+function isIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent); }
+function maybeShowInstall(){
+  const card = document.getElementById('installcard');
+  if (!card) return;
+  const ok = !isStandalone() && !localStorage.getItem('tt-install-off') && (deferredPrompt || isIOS());
+  card.style.display = ok ? '' : 'none';
+}
+function bindInstall(){
+  const btn = document.getElementById('installbtn'), later = document.getElementById('installlater');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    if (deferredPrompt){
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(() => { deferredPrompt = null; maybeShowInstall(); });
+    } else {
+      document.getElementById('iosmodal').style.display = 'flex';
+    }
+  });
+  later.addEventListener('click', () => {
+    localStorage.setItem('tt-install-off', '1');
+    maybeShowInstall();
+  });
+}
+document.getElementById('iosclose').addEventListener('click', () => {
+  document.getElementById('iosmodal').style.display = 'none';
+  localStorage.setItem('tt-install-off', '1');
+});
+
+/* ---------- header ---------- */
+$('#h-title').textContent = C.meta.titolo;
+$('#h-sub').textContent = C.meta.sottotitolo;
+
+/* ---------- tabs ---------- */
+let mapsInit = {};
+function openTab(name){
+  // un cambio tab chiude la vista percorso, da qualunque strada arrivi (bottone,
+  // tocco su una notifica push, codice): altrimenti la tab cambia sotto l'overlay
+  // e lo schermo sembra non reagire
+  const rv = $('#routeview');
+  if (rv && rv.classList.contains('open')) closeRouteView(false);
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  $('#tab-'+name).classList.add('on');
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
+  window.scrollTo({top:0});
+  if (name==='percorso' && !mapsInit.mini) { mapsInit.mini = true; setTimeout(initMiniMap, 60); }
+  if (name==='dormire' && !mapsInit.stay) { mapsInit.stay = true; loadStay22(); }
+  if (name==='live' && !mapsInit.meteo) { mapsInit.meteo = true; loadMeteoTable(); loadSunset(); }
+  // il profilo del Live si ridisegna solo qui e al fix GPS: se un fix e' arrivato
+  // a tab nascosta il disegno era stato saltato, e questo rientro lo recupera
+  if (name==='live' && lvRid && lvKm != null){
+    if (gpsMap) gpsMap.invalidateSize({animate:false});
+    lvAggiorna(lvRid, lvKm);
+    lvPoiMappa();
+  }
+}
+document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>openTab(b.dataset.tab)));
+window.addEventListener('resize', ()=>{
+  if (miniMap) miniMap.invalidateSize();
+  if (gpsMap) gpsMap.invalidateSize();
+  if (rvMap && $('#routeview').classList.contains('open')){
+    rvMap.invalidateSize();
+    rvHide();
+    rvLayout();
+  }
+  // anche il profilo del Live: ruotando il telefono il canvas altrimenti resta
+  // stirato alla larghezza vecchia e i pin puntano ai km sbagliati
+  if (lvRid && lvKm != null && $('#tab-live').classList.contains('on')){
+    $('#lv-tip').style.display = 'none';
+    lvAggiorna(lvRid, lvKm);
+    lvPoiMappa();
+  }
+});
+
+/* ---------- HOME ---------- */
+function renderHome(){
+  const ph = phase();
+  let h = '';
+  h += `<div class="card" id="installcard" style="display:none">
+    <h3><span class="e">${icon('smartphone', 20)}</span> ${esc(U.installa.titolo)}</h3>
+    <p>${esc(U.installa.testo)}</p>
+    <div class="btnrow"><button class="btn small" id="installbtn">${esc(U.installa.salva)}</button>
+    <button class="btn small sec" id="installlater">${esc(U.installa.dopo)}</button></div></div>`;
+  if (C.avvisi && C.avvisi.length){
+    h += `<div class="avvisi"><h3>${esc(U.avvisiTitolo)}</h3>` +
+      C.avvisi.map(a=>`<p>${esc(a.testo)}</p>`).join('') + `</div>`;
+  }
+  if (ph === 'prima') {
+    h += `<div class="card hero"><div class="kicker">${esc(C.meta.kicker)} · ${dataKicker(C.meta.dataPartenza)}</div>
+      <h2>${esc(C.intro.titolo)}</h2>
+      <div id="countdown"></div>
+      <p>${esc(C.intro.testo)}</p></div>`;
+    h += `<div class="card"><h2>${esc(U.checklistTitolo)}</h2>
+      <p class="muted">${esc(U.checklistSotto)}</p><div id="cklist">` +
+      C.checklist.map(c=>{
+        const m = c.testo.match(/^(\d+)\.\s*(.*)$/);
+        const label = m ? m[2] : c.testo;
+        return `<div class="chk" data-id="${c.id}">
+        <div class="top">
+          <label class="chk-box" for="ck-${c.id}"><input type="checkbox" id="ck-${c.id}" aria-label="${esc(label)}"/><span class="mark"></span></label>
+          <span class="chk-label">${esc(label)}</span>
+        </div>
+        <div class="det">${esc(c.dettaglio||'')} ${c.url
+          ? `<a href="${c.url}" target="_blank" rel="noopener">${esc(c.cta||'Apri')} ›</a>`
+          : c.prep
+            ? `<a href="#" data-tab="home" data-prep="1">${esc(U.vai)} ›</a>`
+            : `<a href="#" data-tab="${c.tab}">${esc(U.vai)} ›</a>`}</div>
+      </div>`;
+      }).join('') + `</div></div>`;
+    h += cardPreparazione();
+    h += cardPercorsiBrevi();
+  }
+  if (ph === 'durante') {
+    h += `<div class="bigbtns">
+      <div class="bigbtn primary" data-tab="live" data-gps="1"><span class="e">${icon('crosshair', 26)}</span><b>Live</b><br/><span style="font-size:13.5px;opacity:.9">${esc(U.durante.liveSotto)}</span></div>
+      <a class="bigbtn alert" href="tel:112"><span class="e">${icon('siren', 22)}</span><b>${esc(U.durante.emergenze)}</b></a>
+      <div class="bigbtn" data-tab="live" data-share="1"><span class="e">${icon('share-2', 22)}</span><b>${esc(U.durante.condividi)}</b></div>
+      <div class="bigbtn" data-tab="live" data-meteo="1"><span class="e">${icon('cloud-sun-rain', 22)}</span><b>${esc(U.durante.meteo)}</b></div>
+      <div class="bigbtn" data-tab="dormire"><span class="e">${icon('bed-double', 22)}</span><b>${esc(U.durante.dormire)}</b></div>
+      <div class="bigbtn" data-tab="info"><span class="e">${icon('info', 22)}</span><b>${esc(U.durante.info)}</b></div>
+    </div>`;
+  }
+  if (ph === 'dopo') {
+    h += `<div class="card hero"><h2>${esc(C.dopo.titolo)}</h2><p>${esc(C.dopo.testo)}</p></div>`;
+    h += C.dopo.azioni.map(a=>`<div class="card"><h3>${a.icona} ${esc(a.titolo)}</h3>
+      <p>${esc(a.testo)}</p>
+      <div class="btnrow"><a class="btn" href="${a.url}" target="_blank" rel="noopener">${esc(a.cta)}</a></div></div>`).join('');
+    if (C.dopo.prossimo) h += `<div class="card" style="border:2px solid var(--gold)"><h2>${esc(C.dopo.prossimo.titolo)}</h2>
+      <p>${esc(C.dopo.prossimo.testo)}</p>
+      <div class="btnrow"><a class="btn" href="${C.dopo.prossimo.url}" target="_blank" rel="noopener">${esc(C.dopo.prossimo.cta)}</a></div></div>`;
+  }
+  $('#tab-home').innerHTML = h;
+  if (ph === 'prima') { startCountdown(); bindChecklist(); }
+  bindTabLinks($('#tab-home'));
+  bindInstall();
+  maybeShowInstall();
+}
+function cardPercorsiBrevi(){
+  return `<div class="card"><h2>${esc(U.trePercorsi)}</h2>
+    <div class="rslider">` +
+    C.percorsi.map((p,i)=>`<div class="rslide" data-tab="percorso" style="--col:${p.colore}">
+      <div class="rslide-img">
+        ${ROUTE_PHOTOS[p.id] ? `<img src="${ROUTE_PHOTOS[p.id]}" alt="${esc(p.nome)}" loading="lazy"/>` : ''}
+        <span class="rslide-num">${i+1}</span>
+        <div class="rslide-band"><b>${esc(p.nome)}</b><span>${statPercorso(p)}</span></div>
+      </div>
+    </div>`).join('') +
+    `</div>
+    <div class="btnrow"><button class="btn sec" data-tab="percorso">${esc(U.vaiPercorsi)}</button></div></div>`;
+}
+/* La card "Arriva preparato" in Home (fase prima): allenamento, bici e la
+   lista della spesa con gli sponsor del circuito. Le voci senza url mostrano
+   "in arrivo" finche' Andrea/Francesca non passano link e codici sconto. */
+function cardPreparazione(){
+  const pr = C.preparazione;
+  if (!pr) return '';
+  return `<div class="card" id="prepcard"><h2>${esc(pr.titolo)}</h2>
+    <p>${esc(pr.intro)}</p>` +
+    pr.blocchi.map(b=>`<div class="prepblocco"><h3><span class="e">${icon(b.icona,17)}</span> ${esc(b.titolo)}</h3><p>${esc(b.testo)}</p></div>`).join('') +
+    `<div class="prepshop"><h3><span class="e">${icon('shopping-bag',17)}</span> ${esc(pr.acquisti.titolo)}</h3>
+    <p class="muted">${esc(pr.acquisti.testo)}</p>` +
+    pr.acquisti.voci.map(v=>`<div class="acq">
+      <span class="acq-ico">${icon('tag',14)}</span>
+      <span class="acq-txt"><b>${esc(v.voce)}</b><span class="acq-sp">${esc(v.sponsor)}</span></span>
+      ${v.url
+        ? `<a class="btn small acq-btn" href="${v.url}" target="_blank" rel="noopener">${esc(U.prep.apri)}</a>${v.codice ? `<span class="acq-code">${esc(U.prep.codice)} <b>${esc(v.codice)}</b></span>` : ''}`
+        : `<span class="pending acq-pend">${esc(U.prep.inArrivo)}</span>`}
+    </div>`).join('') + `</div></div>`;
+}
+function bindTabLinks(root){
+  root.querySelectorAll('[data-tab]').forEach(el=>{
+    el.addEventListener('click',e=>{
+      e.preventDefault();
+      openTab(el.dataset.tab);
+      if (el.dataset.gps) setTimeout(startGPS, 250);
+      if (el.dataset.share) { autoShare = true; setTimeout(startGPS, 250); }
+      if (el.dataset.meteo) setTimeout(()=>{
+        const s = document.getElementById('meteosec');
+        if (s) s.scrollIntoView({behavior:'smooth'});
+      }, 250);
+      if (el.dataset.prep) setTimeout(()=>{
+        const s = document.getElementById('prepcard');
+        if (s) s.scrollIntoView({behavior:'smooth'});
+      }, 250);
+    });
+  });
+}
+function startCountdown(){
+  const t = new Date(C.meta.dataPartenza).getTime();
+  function tick(){
+    const d = Math.max(0, t - Date.now());
+    const gg = Math.floor(d/864e5), hh = Math.floor(d%864e5/36e5), mm = Math.floor(d%36e5/6e4);
+    const el = $('#countdown');
+    if (el) el.innerHTML = `<div><b>${gg}</b><span>${esc(U.countdown.giorni)}</span></div>
+      <div><b>${hh}</b><span>${esc(U.countdown.ore)}</span></div><div><b>${mm}</b><span>${esc(U.countdown.minuti)}</span></div>`;
+  }
+  tick(); setInterval(tick, 30000);
+}
+function bindChecklist(){
+  const st = JSON.parse(localStorage.getItem('tt-ck') || '{}');
+  document.querySelectorAll('#cklist .chk').forEach(row=>{
+    const id = row.dataset.id, cb = row.querySelector('input');
+    cb.checked = !!st[id];
+    row.classList.toggle('done', cb.checked);
+    cb.addEventListener('change',()=>{
+      st[id] = cb.checked;
+      localStorage.setItem('tt-ck', JSON.stringify(st));
+      row.classList.toggle('done', cb.checked);
+    });
+    row.addEventListener('click', e => {
+      if (e.target.closest('a')) return;
+      if (e.target.closest('.chk-box')) return;
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change'));
+    });
+  });
+}
+
+/* ---------- PERCORSO ---------- */
+const ROUTE_PHOTOS = {}; // foto dei percorsi TT non ancora scelte — quando ci sono: { originale:'assets/percorsi/originale.jpg', ... }
+function renderPercorso(){
+  let h = `<div class="card"><h2>${esc(U.percorsoScegli)}</h2>
+    <p>${fmt(esc(U.percorsoIntro), '<b>' + esc(C.meta.hub) + '</b>')}</p></div>`;
+  h += C.percorsi.map(p=>`<div class="card route" style="--col:${p.colore}">
+    <div class="rphoto" style="background:linear-gradient(160deg, ${p.colore}26, ${p.colore}59)">
+      ${ROUTE_PHOTOS[p.id]
+        ? `<img class="rphoto-img" src="${ROUTE_PHOTOS[p.id]}" alt="${esc(p.nome)}" loading="lazy"/>`
+        : `<div class="rphoto-ph">${icon('mountain', 30)}</div>`}
+    </div>
+    <div class="rbody">
+      <h3 style="color:${p.colore}">${esc(p.nome)}</h3>
+      <div class="badges">${p.km ? `<span class="badge">${p.km} km</span>` : ''}${p.dplus ? `<span class="badge">${p.dplus} m D+</span>` : ''}${(!p.km && !p.dplus) ? `<span class="badge">${esc(U.inArrivo.dati)}</span>` : ''}<span class="badge">${esc(p.livello)}</span></div>
+      <p>${esc(p.desc)}</p>
+      ${p.note.map(n=>`<div class="rnote">• ${esc(n)}</div>`).join('')}
+      <div class="btnrow rbtns" style="--col:${p.colore}">
+        ${TRACKS[p.id] ? `<button class="btn" data-rv="${p.id}">${icon('route',16)} ${esc(U.mappaAltimetria)}</button>` : ''}
+        ${gpxUrl(p.id) ? `<a class="btn sec dl" href="${gpxUrl(p.id)}" target="_blank" rel="noopener">${esc(U.gpx)}</a>` : ''}
+        ${(!TRACKS[p.id] && !gpxUrl(p.id)) ? `<span class="pending">${esc(U.inArrivo.traccia)}</span>` : ''}
+      </div>
+    </div></div>`).join('');
+  h += C.percorsi.some(p=>TRACKS[p.id])
+    ? `<div class="card" id="mapcard"><h3>${esc(U.insieme)}</h3><div id="minimap"></div></div>`
+    : `<div class="card" id="mapcard"><h3>${esc(U.insieme)}</h3><p class="muted">${esc(U.inArrivo.mappa)}</p></div>`;
+  /* La lista servizi stava qui, staccata dal percorso e con un suo selettore:
+     una seconda scelta del percorso dopo quella appena fatta sulle schede, e
+     220-245 righe che ripetevano quello che ora si vede su mappa e altimetria.
+     Ora vive dentro la vista percorso, sotto la mappa e il profilo dello stesso
+     percorso, comandata dallo stesso filtro. */
+  $('#tab-percorso').innerHTML = h;
+  document.querySelectorAll('[data-rv]').forEach(b=>b.addEventListener('click',()=>openRouteView(b.dataset.rv)));
+}
+function bookBtn(e){
+  return (e.lat ? `<a href="#" class="poibook" data-lat="${e.lat}" data-lng="${e.lng}">${esc(U.prenota)}</a>` : '');
+}
+function subLingua(s){ return U.poiSub[s] || s; }
+function poiRow(e){
+  if (e.t === 'c'){
+    const det = [e.ne?`${e.ne} ${U.conteggi.m}`:null, e.ns?`${e.ns} ${U.conteggi.d}`:null, e.nf?`${e.nf} ${U.conteggi.a}`:null]
+      .filter(Boolean).join(' · ');
+    return `<div class="poirow"><span class="poikm">km ${Math.round(e.km)}</span><b>${esc(e.nome)}</b>
+      <span class="muted">${det}</span>${e.ns ? bookBtn(e) : ''}</div>`;
+  }
+  const ico = icon({a:'droplets', m:'utensils', d:'bed-double'}[e.t], 15);
+  const nome = (e.t === 'a' && e.n > 1)
+    ? `${e.n} ${U.fontane} → km ${Math.round(e.fino)}`
+    : (e.nome || subLingua(e.sub));
+  const sub = (e.nome && e.t !== 'a') ? ` <span class="muted">(${esc(subLingua(e.sub))}${e.luogo ? ' · ' + esc(e.luogo) : ''})</span>`
+            : (e.luogo ? ` <span class="muted">(${esc(e.luogo)})</span>` : '');
+  return `<div class="poirow"><span class="poikm">km ${Math.round(e.km)}</span><span class="poiico t-${e.t}">${ico}</span>
+    <span><b>${esc(nome)}</b>${sub}</span>${e.t === 'd' ? bookBtn(e) : ''}</div>`;
+}
+function bindBook(root){
+  root.querySelectorAll('.poibook').forEach(a=>a.addEventListener('click',ev=>{
+    ev.preventDefault();
+    goBook(+a.dataset.lat, +a.dataset.lng);
+  }));
+}
+function poiMatch(e, f){
+  if (f === 'tutti') return true;
+  if (e.t === 'c') return (f === 'a' && e.nf > 0) || (f === 'm' && e.ne > 0) || (f === 'd' && e.ns > 0);
+  return e.t === f;
+}
+function gapWarnings(list){
+  // buchi > 20 km senza acqua ne' cibo: l'avviso che conta davvero
+  const supply = list.filter(e => e.t === 'a' || e.t === 'm' || (e.t === 'c' && (e.ne > 0 || e.nf > 0)));
+  const out = [];
+  for (let i = 1; i < supply.length; i++){
+    const gap = supply[i].km - supply[i-1].km;
+    if (gap > 20) out.push({km: supply[i-1].km + 0.01, gap: Math.round(gap), a: Math.round(supply[i-1].km), b: Math.round(supply[i].km)});
+  }
+  return out;
+}
+// la lista servizi di un percorso, ordinata per km, con dentro gli avvisi sui buchi
+function poiListHtml(rid, filter){
+  const list = (window.POI && POI[rid]) || [];
+  if (!list.length) return `<p class="muted" style="padding:10px 0">${esc(U.serviziInArrivo)}</p>`;
+  const rows = list.filter(e => poiMatch(e, filter)).map(e => ({km: e.km, html: poiRow(e)}));
+  if (filter !== 'd'){
+    gapWarnings(list).forEach(w => rows.push({km: w.km,
+      html: `<div class="poirow" style="background:rgba(193,18,31,.08);border-radius:12px;padding:7px 8px"><span class="poiico t-w">${icon('triangle-alert', 15)}</span>
+        <span><b>${w.gap} ${esc(U.buco)}</b> <span class="muted">${fmt(esc(U.bucoDettaglio), w.a, w.b)}</span></span></div>`}));
+  }
+  rows.sort((x, y) => x.km - y.km);
+  return rows.map(r => r.html).join('');
+}
+let stayCenter = null;
+function goBook(lat, lng){
+  stayCenter = {lat, lng};
+  const alreadyLoaded = mapsInit.stay;
+  openTab('dormire'); // openTab chiude da solo la vista percorso se e' aperta
+  if (alreadyLoaded) loadStay22();
+}
+function arrowLayer(ll, color, stepKm){
+  const g = L.layerGroup();
+  const R=6371, rad=Math.PI/180;
+  let cum=0, next=stepKm;
+  for (let i=1;i<ll.length;i++){
+    const a=ll[i-1], b=ll[i];
+    const la1=a[0]*rad, la2=b[0]*rad, dla=la2-la1, dlo=(b[1]-a[1])*rad;
+    const h=Math.sin(dla/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dlo/2)**2;
+    cum += 2*R*Math.asin(Math.sqrt(h));
+    if (cum >= next){
+      next += stepKm;
+      const brg = Math.atan2(Math.sin(dlo)*Math.cos(la2), Math.cos(la1)*Math.sin(la2)-Math.sin(la1)*Math.cos(la2)*Math.cos(dlo))/rad;
+      g.addLayer(L.marker(b,{interactive:false,keyboard:false,icon:L.divIcon({className:'',iconSize:[16,16],iconAnchor:[8,8],
+        html:`<svg width="16" height="16" viewBox="-8 -8 16 16" style="transform:rotate(${brg-90}deg)"><path d="M-4,-5 L5,0 L-4,5 L-1.5,0 Z" fill="${color}" stroke="#fff" stroke-width="1.5"/></svg>`})}));
+    }
+  }
+  return g;
+}
+let miniMap;
+function initMiniMap(){
+  if (!document.getElementById('minimap')) return; // niente tracce caricate, niente mappa
+  miniMap = L.map('minimap');
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'© Esri'}).addTo(miniMap);
+  let all = [];
+  // in ordine inverso, cosi' l'Originale si disegna per ultimo e resta sopra
+  C.percorsi.slice().reverse().forEach(p=>{
+    if (!TRACKS[p.id]) return;
+    const ll = TRACKS[p.id].coords.map(c=>[c[1],c[0]]);
+    L.polyline(ll,{color:'#fff',weight:6,opacity:.8}).addTo(miniMap);
+    L.polyline(ll,{color:p.colore,weight:3.5}).addTo(miniMap);
+    arrowLayer(ll, p.colore, 20).addTo(miniMap);
+    all = all.concat(ll);
+  });
+  const primo = C.percorsi.find(p=>TRACKS[p.id]);
+  if (primo){
+    const start = TRACKS[primo.id].coords[0];
+    L.circleMarker([start[1],start[0]],{radius:8,color:'#fff',weight:2,fillColor:'#111',fillOpacity:1})
+      .addTo(miniMap).bindPopup(U.partenzaArrivo);
+  }
+  if (all.length) miniMap.fitBounds(L.latLngBounds(all),{padding:[20,20]});
+}
+
+/* ---------- VISTA PERCORSO: mappa + altimetria dentro l'app ----------
+   Prima il bottone "Mappa + altimetria" apriva una pagina esterna che non aveva
+   nessun link di ritorno. Chi ha la guida salvata in home ci finiva in una
+   finestra senza barra del browser, quindi senza nemmeno il tasto indietro.
+   Ora la schermata vive qui, con l'uscita in alto a sinistra, il tasto indietro
+   di Android e il tasto Esc. */
+const rvGeom = {};
+function routeGeom(id){
+  if (rvGeom[id]) return rvGeom[id];
+  const T = TRACKS[id], c = T.coords, ele = T.ele;
+  const R = 6371, rad = Math.PI/180;
+  const cum = [0];
+  for (let i = 1; i < c.length; i++){
+    const la1 = c[i-1][1]*rad, la2 = c[i][1]*rad, dla = la2-la1, dlo = (c[i][0]-c[i-1][0])*rad;
+    const h = Math.sin(dla/2)**2 + Math.cos(la1)*Math.cos(la2)*Math.sin(dlo/2)**2;
+    cum.push(cum[i-1] + 2*R*Math.asin(Math.sqrt(h)));
+  }
+  const tot = cum[cum.length-1];
+  const p = C.percorsi.find(x => x.id === id) || {};
+  const kmTot = p.km || Math.round(tot);
+  /* La traccia di tracks.js e' semplificata e misura il 2-3% in meno del GPX
+     completo, mentre i km dei POI arrivano dal GPX completo. Scalando tutto in
+     modo lineare una fontana finirebbe fino a 2,7 km piu' avanti di dov'e'
+     davvero, cioe' dalla parte sbagliata di una salita. I POI che hanno le
+     coordinate fanno da ancora: per ognuno si cerca il punto traccia piu'
+     vicino e si ottiene la coppia (km del POI, km sulla traccia). Fra un'ancora
+     e l'altra si interpola. */
+  const anchors = [[0, 0]];
+  const poi = (window.POI && POI[id]) || [];
+  poi.filter(e => e.lat != null).sort((a,b) => a.km - b.km).forEach(e => {
+    const cl = Math.cos(e.lat*rad);
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < c.length; i++){
+      const dy = c[i][1]-e.lat, dx = (c[i][0]-e.lng)*cl;
+      const d = dx*dx + dy*dy;
+      if (d < bd){ bd = d; best = i; }
+    }
+    if (Math.sqrt(bd)*111 > 1) return; // troppo lontano dalla traccia per fidarsi
+    const prev = anchors[anchors.length-1];
+    if (e.km > prev[0]+0.05 && cum[best] > prev[1]+0.05) anchors.push([e.km, cum[best]]);
+  });
+  const last = anchors[anchors.length-1];
+  if (kmTot > last[0]+0.05 && tot > last[1]+0.05) anchors.push([kmTot, tot]);
+  const kmOf = d => {
+    let lo = 0, hi = anchors.length-1;
+    while (lo < hi-1){ const m = (lo+hi)>>1; if (anchors[m][1] <= d) lo = m; else hi = m; }
+    const a = anchors[lo], b = anchors[hi];
+    return a[0] + (b[0]-a[0]) * (d-a[1]) / ((b[1]-a[1]) || 1);
+  };
+  const kmAt = cum.map(kmOf);
+  /* Dislivello che resta da qui all'arrivo. La somma grezza dei dislivelli di una
+     traccia gonfia sempre il totale, quindi la si riporta in scala sul D+ ufficiale
+     del percorso: il numero mostrato resta coerente con quello comunicato. */
+  const upFrom = new Array(ele.length).fill(0);
+  for (let i = ele.length-2; i >= 0; i--){
+    const d = ele[i+1] - ele[i];
+    upFrom[i] = upFrom[i+1] + (d > 0 ? d : 0);
+  }
+  // p.dplus e' testo gia' formattato e cambia con la lingua ("7.900" it, "7,900" en)
+  const dpTot = parseInt(String(p.dplus || '').replace(/\D/g, ''), 10) || 0;
+  const k = dpTot && upFrom[0] ? dpTot / upFrom[0] : 1;
+  const g = { cum, tot, kmTot, kmAt, ele, ll: c.map(x => [x[1], x[0]]), colore: p.colore || '#a80030',
+              nome: p.nome || id, dplusFrom: upFrom.map(v => Math.round(v*k/10)*10) };
+  g.idxFromKm = km => {
+    let lo = 0, hi = kmAt.length-1;
+    while (lo < hi){ const m = (lo+hi)>>1; if (kmAt[m] < km) lo = m+1; else hi = m; }
+    return lo;
+  };
+  /* Dove finisce un POI sulla mappa. Paesi e alloggi hanno le coordinate vere e
+     si usano quelle. Fontane e posti dove mangiare hanno solo il km, perche' lo
+     script di generazione butta lat/lon dopo aver calcolato la posizione lungo
+     il percorso: quelli si appoggiano al punto della traccia a quel km. Restano
+     comunque dentro il corridoio con cui sono stati cercati (500 m per il cibo,
+     300 m per l'acqua), quindi il segno dice "a questo km del percorso", non
+     "esattamente qui" — ed e' scritto nel testo sopra la lista. Per avere le
+     posizioni vere servirebbe rigenerare poi.js da OpenStreetMap. */
+  g.posOf = e => (e.lat != null) ? [e.lat, e.lng] : g.ll[g.idxFromKm(e.km)];
+  rvGeom[id] = g;
+  return g;
+}
+let rvId = null, rvMap = null, rvLayer = null, rvCur = null, rvFilter = 'tutti',
+    rvSel = -1, rvPins = [], rvPushed = false;
+const RV_ICO = { a:'droplets', m:'utensils', d:'bed-double', c:'landmark' };
+// un decimale, con la virgola in italiano e il punto in inglese
+function kmDec(v){ const s = v.toFixed(1); return LANG === 'it' ? s.replace('.', ',') : s; }
+function openRouteView(id){
+  rvId = id; rvSel = -1; rvFilter = 'tutti';
+  // aprire un percorso lo elegge a "mio percorso" per Live e Dormire, come
+  // faceva la vecchia lista servizi: senza questa riga la tab Percorso non
+  // aveva piu' nessun punto che lo impostasse
+  setMyRoute(id);
+  if (rvMap) rvMap.closePopup(); // niente fumetti del percorso precedente
+  const g = routeGeom(id);
+  const p = C.percorsi.find(x => x.id === id) || {};
+  const view = $('#routeview');
+  view.style.setProperty('--rv-col', g.colore);
+  $('#rv-nome').textContent = g.nome;
+  $('#rv-stats').textContent = statPercorso(p);
+  const rvGpx = gpxUrl(id);
+  $('#rv-gpx').style.display = rvGpx ? '' : 'none';
+  if (rvGpx) $('#rv-gpx').href = rvGpx;
+  $('#rv-gpx').textContent = U.gpx;
+  $('#rv-filters').innerHTML =
+    `<button class="btn small sec pfil on" data-rf="tutti">${esc(U.filtri.tutti)}</button>` +
+    ['a','m','d'].map(t => `<button class="btn small sec pfil" data-rf="${t}">${icon(RV_ICO[t],15)} ${esc(U.filtri[t])}</button>`).join('');
+  document.querySelectorAll('#rv-filters .pfil').forEach(b => b.addEventListener('click', () => {
+    rvFilter = b.dataset.rf;
+    rvHide(); // tooltip E cursore sulla mappa, non solo il tooltip
+    document.querySelectorAll('#rv-filters .pfil').forEach(x => x.classList.toggle('on', x === b));
+    rvLayout();
+  }));
+  $('#rv-listtit').textContent = U.servizi;
+  $('#rv-listintro').innerHTML = U.serviziIntro;
+  view.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  $('#rv-scroll').scrollTop = 0; // riaprendo un altro percorso si riparte dalla mappa
+  if (!rvPushed){ history.pushState({rv:1}, ''); rvPushed = true; }
+  rvBuildMap();
+  rvLayout(); // diretto, non in requestAnimationFrame: a scheda in secondo piano non partirebbe
+}
+function closeRouteView(fromHistory){
+  $('#routeview').classList.remove('open');
+  document.body.style.overflow = '';
+  // ripulire subito: senza queste righe tooltip, cursore e fumetto del percorso
+  // vecchio ricomparivano intatti aprendo un percorso diverso
+  if (rvMap){ rvHide(); rvMap.closePopup(); }
+  rvSel = -1;
+  if (rvPushed && !fromHistory){ rvPushed = false; history.back(); }
+  else rvPushed = false;
+}
+function rvBuildMap(){
+  const g = routeGeom(rvId);
+  if (!rvMap){
+    rvMap = L.map('rv-map');
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+      {maxZoom:18, attribution:'© Esri'}).addTo(rvMap);
+    rvCur = L.circleMarker([0,0], {radius:7, color:'#fff', weight:2.5, fillColor:'#1971c2', fillOpacity:1, interactive:false});
+    const pick = e => {
+      const q = e.latlng, cl = Math.cos(q.lat*Math.PI/180);
+      const gg = routeGeom(rvId);
+      let best = -1, bd = Infinity;
+      for (let i = 0; i < gg.ll.length; i++){
+        const dy = gg.ll[i][0]-q.lat, dx = (gg.ll[i][1]-q.lng)*cl;
+        const d = dx*dx + dy*dy;
+        if (d < bd){ bd = d; best = i; }
+      }
+      if (Math.sqrt(bd)*111 < 2) rvShowAt(best); else rvHide();
+    };
+    rvMap.on('click', pick);
+    rvMap.on('mousemove', pick);
+    // i segni si ricalcolano a fine movimento: quali entrano dipende dallo zoom
+    rvMap.on('moveend', rvMapPoi);
+    agganciaPopup(rvMap, rvMapPoi);
+  }
+  if (rvLayer) rvMap.removeLayer(rvLayer);
+  const ll = g.ll;
+  rvLayer = L.layerGroup([
+    L.polyline(ll, {color:'#fff', weight:8, opacity:.9}),
+    L.polyline(ll, {color:g.colore, weight:4.5}),
+    arrowLayer(ll, g.colore, 10),
+    L.circleMarker(ll[0], {radius:8, color:'#fff', weight:2, fillColor:g.colore, fillOpacity:1}).bindPopup(U.rv.partenza),
+    L.circleMarker(ll[ll.length-1], {radius:8, color:'#fff', weight:2, fillColor:'#c1121f', fillOpacity:1}).bindPopup(U.rv.arrivo)
+  ]).addTo(rvMap);
+  /* Niente pallini dei km ogni 50 sulla traccia: da quando la mappa porta i
+     punti di interesse erano solo altri pallini addosso alla linea, e i km si
+     leggono sull'altimetria qui sotto (decisione di Andrea, 13 agosto). */
+  // senza animazione: inquadrare un altro percorso non e' un movimento da
+  // seguire con l'occhio, e cosi' i segni si calcolano sulla vista definitiva
+  // invece che su quella di passaggio
+  rvMap.invalidateSize({animate:false});
+  rvMap.fitBounds(L.latLngBounds(ll), {padding:[24,24], animate:false});
+}
+/* ---------- profilo altimetrico, disegnato per due schermate ----------
+   La vista percorso lo mostra tutto, il Live mostra una finestra attorno a dove
+   sei: sul Lungo 374 km schiacciati in 350 pixel non dicono niente su che
+   salita hai davanti, che e' l'unica cosa che interessa mentre pedali. */
+function creaProfilo(pref){
+  const P = { pref, W:0, H:0, emin:0, emax:0, da:0, a:1 };
+  P.X = km => 44 + (P.W-44-12) * (km-P.da) / ((P.a-P.da) || 1);
+  P.Y = e  => 12 + (P.H-12-22) * (1 - (e-P.emin)/((P.emax-P.emin) || 1));
+  P.kmDaX = x => P.da + Math.max(0, Math.min(1, (x-44)/((P.W-44-12) || 1))) * (P.a-P.da);
+  // posizione del tooltip, agganciata ai bordi cosi' non esce dal riquadro
+  P.tipXY = (km, ele) => ({ x: Math.min(Math.max(P.X(km), 54), P.W-54), y: Math.max(P.Y(ele), 58) });
+  return P;
+}
+const rvProf = creaProfilo('rv'), lvProf = creaProfilo('lv');
+function profDisegna(P, g, da, a, selKm){
+  const wrap = $('#'+P.pref+'-profwrap'), cv = $('#'+P.pref+'-prof');
+  if (!wrap || !cv || !wrap.clientWidth) return false;
+  const ctx = cv.getContext('2d'), dpr = window.devicePixelRatio || 1;
+  P.da = da; P.a = a;
+  P.W = wrap.clientWidth; P.H = wrap.clientHeight;
+  cv.width = P.W*dpr; cv.height = P.H*dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  /* La scala verticale si misura sulla finestra mostrata, non su tutto il
+     percorso: con la scala del Lungo i prossimi 25 km in fondovalle
+     sembrerebbero una riga piatta. */
+  // il clamp finale tiene i1 dentro l'array: con un ultimo segmento di traccia
+  // lungo piu' del look-back, i0+1 sforerebbe e il profilo verrebbe vuoto
+  const i0 = g.idxFromKm(da), i1 = Math.min(g.kmAt.length-1, Math.max(g.idxFromKm(a), i0+1));
+  let lo = Infinity, hi = -Infinity;
+  for (let i = i0; i <= i1; i++){ if (g.ele[i] < lo) lo = g.ele[i]; if (g.ele[i] > hi) hi = g.ele[i]; }
+  const pad = Math.max((hi-lo)*0.12, 25);
+  P.emin = Math.floor((lo-pad)/50)*50;
+  P.emax = Math.ceil((hi+pad)/50)*50;
+  ctx.clearRect(0, 0, P.W, P.H);
+  ctx.font = '10.5px Inter, sans-serif';
+  const dislivello = P.emax - P.emin;
+  const estep = dislivello > 1500 ? 500 : dislivello > 700 ? 250 : dislivello > 300 ? 100 : 50;
+  for (let e = Math.ceil(P.emin/estep)*estep; e <= P.emax; e += estep){
+    const y = P.Y(e);
+    ctx.strokeStyle = '#ece7dd'; ctx.beginPath(); ctx.moveTo(44, y); ctx.lineTo(P.W-12, y); ctx.stroke();
+    ctx.fillStyle = '#95898c'; ctx.textAlign = 'right'; ctx.fillText(e + ' m', 40, y+3.5);
+  }
+  const largo = a - da;
+  const kstep = largo > 300 ? 100 : largo > 150 ? 50 : largo > 60 ? 20 : largo > 25 ? 10 : 5;
+  for (let km = Math.ceil(da/kstep)*kstep; km < a; km += kstep){
+    if (km <= da + largo*0.04) continue; // etichetta troppo vicina al bordo
+    const x = P.X(km);
+    ctx.strokeStyle = '#f5f0e7'; ctx.beginPath(); ctx.moveTo(x, 12); ctx.lineTo(x, P.H-22); ctx.stroke();
+    ctx.fillStyle = '#95898c'; ctx.textAlign = 'center'; ctx.fillText(km, x, P.H-7);
+  }
+  ctx.fillStyle = '#95898c'; ctx.textAlign = 'right'; ctx.fillText('km', P.W-12, P.H-7);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(44, 0, P.W-44-12, P.H); ctx.clip();
+  const traccia = () => {
+    ctx.beginPath(); ctx.moveTo(P.X(g.kmAt[i0]), P.Y(g.ele[i0]));
+    for (let i = i0+1; i <= i1; i++) ctx.lineTo(P.X(g.kmAt[i]), P.Y(g.ele[i]));
+  };
+  traccia();
+  ctx.lineTo(P.X(g.kmAt[i1]), P.H-22); ctx.lineTo(P.X(g.kmAt[i0]), P.H-22); ctx.closePath();
+  const grad = ctx.createLinearGradient(0, 12, 0, P.H-22);
+  grad.addColorStop(0, g.colore+'55'); grad.addColorStop(1, g.colore+'0d');
+  ctx.fillStyle = grad; ctx.fill();
+  traccia();
+  ctx.strokeStyle = g.colore; ctx.lineWidth = 1.8; ctx.stroke(); ctx.lineWidth = 1;
+  ctx.restore();
+  if (selKm != null && selKm >= da && selKm <= a){
+    const i = g.idxFromKm(selKm);
+    const x = P.X(g.kmAt[i]), y = P.Y(g.ele[i]);
+    ctx.strokeStyle = '#241419'; ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.moveTo(x, 12); ctx.lineTo(x, P.H-22); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fillStyle = '#1971c2'; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
+  }
+  return true;
+}
+/* Raggruppa i punti che cadrebbero uno sull'altro invece di buttarli via.
+   Serve identico sul profilo e sulla mappa, per lo stesso motivo: acqua e cibo
+   hanno solo il km, quindi quelli con lo stesso km finiscono sullo stesso
+   pixel e nessuno zoom li separa. Il numero sul segno dice quanti sono. */
+function raggruppa(punti, dove, distanza){
+  const out = [];
+  punti.forEach(e => {
+    const q = dove(e);
+    if (!q) return;
+    const vicino = out.find(gr => Math.abs(gr.q.x-q.x) < distanza && Math.abs(gr.q.y-q.y) < distanza);
+    if (vicino) vicino.membri.push(e);
+    else out.push({ q, pos: q.pos, capo: e, membri: [e] });
+  });
+  return out;
+}
+// con "tutto" vengono prima i paesi, che riassumono i servizi di una zona; con un
+// filtro attivo prima quelli di quella categoria, altrimenti i paesi si prendono
+// tutti i posti e le fontane in mezzo al nulla non si vedono mai
+function ordinePoi(filtro){
+  const pri = filtro === 'tutti' ? { c:0, a:1, m:2, d:3 } : { [filtro]:0, c:1 };
+  const rank = e => (pri[e.t] != null ? pri[e.t] : 2);
+  return (a, b) => (rank(a)-rank(b)) || (a.km-b.km);
+}
+// icone sul profilo, alla quota del loro km
+function profPin(P, g, lista, filtro, onTap){
+  const box = $('#'+P.pref+'-pins');
+  if (!box) return [];
+  const dentro = lista.filter(e => poiMatch(e, filtro) && e.km >= P.da && e.km <= P.a);
+  const gruppi = raggruppa(dentro.slice().sort(ordinePoi(filtro)),
+    e => ({ x: P.X(e.km), y: P.Y(g.ele[g.idxFromKm(e.km)]) }), 24);
+  box.innerHTML = gruppi.map((gr, i) => {
+    const n = gr.membri.length;
+    return `<button class="rvpin t-${gr.capo.t}" data-pin="${i}" style="left:${gr.q.x}px;top:${gr.q.y}px">` +
+      `${icon(RV_ICO[gr.capo.t], 13)}${n > 1 ? `<i class="n">${n}</i>` : ''}</button>`;
+  }).join('');
+  box.querySelectorAll('.rvpin').forEach(b => b.addEventListener('click', ev => {
+    ev.stopPropagation();
+    onTap(gruppi[+b.dataset.pin], +b.dataset.pin);
+  }));
+  return gruppi;
+}
+function rvDraw(){
+  if (!rvId) return;
+  const g = routeGeom(rvId);
+  profDisegna(rvProf, g, 0, g.kmTot, rvSel >= 0 ? g.kmAt[rvSel] : null);
+}
+/* Il profilo si ridisegna a ogni tocco. Icone, segni sulla mappa e lista solo
+   quando cambia il filtro o l'ingombro: sono le tre viste sugli stessi dati e
+   il filtro le comanda tutte insieme. */
+function rvLayout(){ rvDraw(); rvDrawPins(); rvMapPoi(); rvRenderList(); }
+function rvRenderList(){
+  const el = $('#rv-list');
+  if (!el || !rvId) return;
+  el.innerHTML = poiListHtml(rvId, rvFilter);
+  bindBook(el);
+}
+/* I segni sulla mappa. Come sul profilo si mettono prima i piu' importanti, ma
+   qui la distanza si misura in pixel sullo schermo.
+   Chi finisce addosso a un altro NON sparisce: entra nel suo gruppo, e il segno
+   porta il numero di quanti ne rappresenta. Serve perche' fontane e posti dove
+   mangiare non hanno le coordinate vere e vengono appoggiati al punto della
+   traccia al loro km: in un paese piu' locali con lo stesso km cadono sullo
+   stesso identico punto e nessuno zoom li separerebbe mai (visto sul Trentino
+   Gravel, otto locali a Rovereto in 700 metri). Senza il numero la mappa
+   direbbe "qui c'e' un posto" dove ce ne sono otto.
+   Si disegna solo cio' che sta nella finestra visibile, altrimenti a mappa
+   larga si costruirebbero centinaia di marcatori per vederne dieci. */
+function poiDi(rid){ return (window.POI && POI[rid]) || []; }
+/* Un fumetto aperto e' sacro: i rebuild dei segni (moveend, fix GPS) lo
+   distruggerebbero un attimo dopo l'apertura, perche' l'autoPan del fumetto
+   stesso muove la mappa e fa scattare moveend. Finche' e' aperto i rebuild si
+   saltano; alla chiusura si recupera quello eventualmente saltato. */
+function agganciaPopup(map, ricostruisci){
+  map.on('popupopen', ev => { map._fumettoAperto = true; bindBook(ev.popup.getElement()); });
+  map.on('popupclose', () => { map._fumettoAperto = false; ricostruisci(); });
+}
+function poiSuMappa(map, g, lista, filtro, onTap){
+  const strato = L.layerGroup().addTo(map);
+  const vista = map.getBounds().pad(0.1);
+  const dentro = lista.filter(e => poiMatch(e, filtro)).sort(ordinePoi(filtro));
+  raggruppa(dentro, e => {
+    const ll = g.posOf(e);
+    if (!ll || !vista.contains(ll)) return null;
+    const q = map.latLngToContainerPoint(ll);
+    q.pos = ll;
+    return q;
+  }, 28).forEach(gr => {
+    const e = gr.capo, n = gr.membri.length;
+    const mk = L.marker(gr.pos, {icon: L.divIcon({className:'', iconSize:[24,24], iconAnchor:[12,12],
+      html:`<span class="rvmk t-${e.t}">${icon(RV_ICO[e.t], 13)}${n > 1 ? `<i class="n">${n}</i>` : ''}</span>`})})
+      .bindPopup(() => rvPopup(gr)); // pigro: l'HTML si costruisce solo se il fumetto si apre
+    if (onTap) mk.on('click', () => onTap(gr));
+    strato.addLayer(mk);
+  });
+  return strato;
+}
+let rvMk = null, rvMkSig = null;
+function rvMapPoi(){
+  if (!rvMap || !rvId || !$('#routeview').classList.contains('open')) return;
+  if (rvMap._fumettoAperto) return; // si ricostruisce alla chiusura del fumetto
+  // stessa vista, stesso percorso, stesso filtro: niente da rifare — evita anche
+  // il doppio rebuild all'apertura (fitBounds scatena moveend, poi arriva rvLayout)
+  const sig = rvId + '|' + rvFilter + '|' + rvMap.getBounds().toBBoxString();
+  if (sig === rvMkSig) return;
+  rvMkSig = sig;
+  const g = routeGeom(rvId);
+  if (rvMk) rvMap.removeLayer(rvMk);
+  rvMk = poiSuMappa(rvMap, g, poiDi(rvId), rvFilter,
+    gr => rvShowAt(g.idxFromKm(gr.capo.km), gruppoLabel(gr)));
+}
+// il blocco "quanti posti per mangiare / dormire / fontane" di un paese,
+// identico in lista, tooltip e fumetti: UNA copia sola
+function contiDet(e){
+  return [e.ne?`${e.ne} ${U.conteggi.m}`:null, e.ns?`${e.ns} ${U.conteggi.d}`:null, e.nf?`${e.nf} ${U.conteggi.a}`:null]
+    .filter(Boolean).join(' · ');
+}
+function rvVoce(e){
+  const det = (e.t === 'c')
+    ? contiDet(e)
+    : [(e.nome && e.t !== 'a') ? esc(subLingua(e.sub)) : null, e.luogo ? esc(e.luogo) : null]
+        .filter(Boolean).join(' · ');
+  const prenota = (e.t === 'd' || (e.t === 'c' && e.ns)) ? bookBtn(e) : '';
+  return `<b>${rvNome(e)}</b><span class="km"> · km ${Math.round(e.km)}</span>` +
+    (det ? `<span class="det">${det}</span>` : '') + prenota;
+}
+const RV_POP_MAX = 8; // oltre questa soglia il fumetto diventa un muro di testo
+function rvPopup(gr){
+  if (gr.membri.length === 1) return `<div class="rvpop">${rvVoce(gr.capo)}</div>`;
+  const mostrati = gr.membri.slice(0, RV_POP_MAX);
+  const restanti = gr.membri.length - mostrati.length;
+  return `<div class="rvpop gruppo"><b class="tit">${fmt(esc(U.rv.quiCiSono), gr.membri.length)}</b>` +
+    mostrati.map(e => `<div class="voce">${rvVoce(e)}</div>`).join('') +
+    (restanti ? `<div class="voce muted">${fmt(esc(U.rv.eAltri), restanti)}</div>` : '') + `</div>`;
+}
+function rvDrawPins(){
+  const g = routeGeom(rvId);
+  rvPins = profPin(rvProf, g, poiDi(rvId), rvFilter, (gr, i) => rvSelectPin(i));
+  // il totale esce dai gruppi stessi: ogni punto filtrato sta in un gruppo,
+  // quindi la somma dei membri E' la popolazione davvero disegnata
+  const totale = rvPins.reduce((n, gr) => n + gr.membri.length, 0);
+  $('#rv-foot').innerHTML = (totale
+    ? `<span>${fmt(esc(U.rv.mostrati), '<b>'+totale+'</b>', '<b>'+rvPins.length+'</b>')}</span>`
+    : `<span>${esc(U.rv.nessunPunto)}</span>`)
+    + `<span>${esc(U.rv.aiuto)}</span>`;
+}
+// solo il nome di un punto, senza dettagli
+function rvNome(e){
+  if (e.t === 'c') return esc(e.nome);
+  if (e.t === 'a' && e.n > 1) return `${e.n} ${esc(U.fontane)}`;
+  return esc(e.nome || subLingua(e.sub));
+}
+function rvPinLabel(e){
+  if (e.t === 'c'){
+    const det = contiDet(e);
+    return rvNome(e) + (det ? `<br/>${det}` : '');
+  }
+  return rvNome(e);
+}
+// l'etichetta di un gruppo: il primo per nome, e quanti altri stanno li' sotto
+function gruppoLabel(gr){
+  const testa = rvPinLabel(gr.capo);
+  return gr.membri.length > 1
+    ? testa + `<br/>${fmt(esc(U.rv.altriQui), gr.membri.length - 1)}`
+    : testa;
+}
+function rvSelectPin(i){
+  const gr = rvPins[i];
+  if (!gr) return;
+  const g = routeGeom(rvId);
+  rvShowAt(g.idxFromKm(gr.capo.km), gruppoLabel(gr));
+  $('#rv-pins').querySelectorAll('.rvpin').forEach(b => b.classList.toggle('sel', +b.dataset.pin === i));
+}
+function rvShowAt(i, label){
+  const g = routeGeom(rvId);
+  rvSel = i;
+  rvDraw();
+  const tip = $('#rv-tip');
+  const km = g.kmAt[i];
+  const at = rvProf.tipXY(km, g.ele[i]);
+  tip.style.display = 'block';
+  tip.style.left = at.x + 'px';
+  tip.style.top = at.y + 'px';
+  tip.innerHTML = (label ? `<b>${label}</b><br/>` : '') +
+    `km ${kmDec(km)} · ${g.ele[i]} m ${esc(U.rv.quota)}<br/>` +
+    fmt(esc(U.rv.daQui), Math.round(g.kmTot-km), g.dplusFrom[i]);
+  rvCur.setLatLng(g.ll[i]);
+  if (!rvMap.hasLayer(rvCur)) rvCur.addTo(rvMap);
+}
+function rvHide(){
+  rvSel = -1; rvDraw();
+  $('#rv-tip').style.display = 'none';
+  if (rvMap && rvMap.hasLayer(rvCur)) rvMap.removeLayer(rvCur);
+}
+function rvScrub(clientX){
+  const r = $('#rv-prof').getBoundingClientRect();
+  rvShowAt(routeGeom(rvId).idxFromKm(rvProf.kmDaX(clientX - r.left)));
+}
+$('#rv-back').innerHTML =
+  `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+     stroke-linecap="round" stroke-linejoin="round"><path d="M15 18L9 12l6-6"/></svg>` + esc(U.rv.torna);
+$('#rv-back').addEventListener('click', () => closeRouteView(false));
+$('#rv-profwrap').addEventListener('mousemove', e => { if (rvId) rvScrub(e.clientX); });
+$('#rv-profwrap').addEventListener('mouseleave', () => { if (rvId) rvHide(); });
+$('#rv-profwrap').addEventListener('touchstart', e => { if (rvId && !e.target.closest('.rvpin')) rvScrub(e.touches[0].clientX); }, {passive:true});
+$('#rv-profwrap').addEventListener('touchmove', e => {
+  if (!rvId || e.target.closest('.rvpin')) return;
+  rvScrub(e.touches[0].clientX);
+  // con touch-action:pan-y il browser puo' aver gia' preso in carico lo scroll
+  // verticale: quegli eventi non sono annullabili e preventDefault li' e' un warning
+  if (e.cancelable) e.preventDefault();
+}, {passive:false});
+window.addEventListener('popstate', () => {
+  if ($('#routeview').classList.contains('open')) closeRouteView(true);
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('#routeview').classList.contains('open')) closeRouteView(false);
+});
+
+/* ---------- INFO ---------- */
+function renderInfo(){
+  let h = `<input id="infosearch" type="search" placeholder="${esc(U.cercaInfo)}" autocomplete="off"/>
+    <div id="infolist">`;
+  let temaCorrente = null;
+  C.infoCards.forEach(c=>{
+    if (c.tema !== temaCorrente){
+      temaCorrente = c.tema;
+      h += `<h2 class="itheme" data-tema="${esc(c.tema)}">${esc(c.tema)}</h2>`;
+    }
+    h += `<div class="card icard" id="info-${c.id}" data-tema="${esc(c.tema)}" data-cerca="${esc((c.titolo+' '+c.corpo+' '+c.cerca).toLowerCase())}">
+      <div class="head"><span class="e">${icon(ICONS[c.id] || 'info', 20)}</span><h3>${esc(c.titolo)}</h3></div>
+      <div class="body"><p>${esc(c.corpo)}</p>
+      ${c.link ? `<a class="btn small sec" href="${c.link.url}" target="_blank" rel="noopener">${esc(c.link.testo)}</a>` : ''}</div>
+    </div>`;
+  });
+  h += `</div>`;
+  $('#tab-info').innerHTML = h;
+  $('#infosearch').addEventListener('input',e=>{
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('#infolist .icard').forEach(c=>{
+      c.style.display = (!q || c.dataset.cerca.includes(q)) ? '' : 'none';
+    });
+    document.querySelectorAll('#infolist .itheme').forEach(t=>{
+      const visibili = Array.from(document.querySelectorAll(`#infolist .icard[data-tema="${t.dataset.tema}"]`))
+        .some(c => c.style.display !== 'none');
+      t.style.display = visibili ? '' : 'none';
+    });
+  });
+}
+
+/* ---------- DORMIRE ---------- */
+function gpxUrl(id){
+  const p = C.percorsi.find(x=>x.id===id);
+  return (p && p.gpx) ? p.gpx : null;
+}
+function myRoute(){ return localStorage.getItem('tt-route') || 'originale'; }
+function setMyRoute(id){
+  localStorage.setItem('tt-route', id);
+  document.querySelectorAll('.rpill').forEach(b=>{
+    const on = b.dataset.route === id;
+    b.classList.toggle('on', on);
+    b.style.background = on ? C.percorsi.find(p=>p.id===id).colore : '';
+    b.style.borderColor = on ? C.percorsi.find(p=>p.id===id).colore : '';
+    b.style.color = on ? '#fff' : '';
+  });
+  const sel = document.getElementById('gpsroute');
+  if (sel) sel.value = id;
+}
+function renderDormire(){
+  const s = C.dormire;
+  let h = `<div class="card"><h2>${esc(s.titolo)}</h2><p>${esc(s.intro)}</p></div>`;
+  const pills = C.percorsi.some(p=>gpxUrl(p.id))
+    ? `<p style="margin:4px 0 8px"><span class="muted">${esc(U.mappaTraccia)}</span></p>
+    <div class="btnrow" style="margin:0 0 10px">` +
+      C.percorsi.map(p=>`<button class="btn small sec rpill" data-route="${p.id}">${esc(p.breve)}</button>`).join('') + `</div>`
+    : '';
+  h += `<div class="card" style="border:2px solid var(--gold)"><h3>🗺️ ${esc(s.stay22.titolo)}</h3><p>${esc(s.stay22.testo)}</p>
+    ${pills}
+    <div id="stay22wrap"><div style="padding:40px;text-align:center;color:var(--muted)">${esc(U.caricamentoAlloggi)}</div></div></div>`;
+  if (s.consigli && s.consigli.length)
+    h += `<div class="card"><h3>Consigli</h3>` +
+      s.consigli.map(c=>`<div class="rnote">• ${esc(c)}</div>`).join('') + `</div>`;
+  $('#tab-dormire').innerHTML = h;
+  document.querySelectorAll('#tab-dormire .rpill').forEach(b=>b.addEventListener('click',()=>{
+    setMyRoute(b.dataset.route);
+    stayCenter = null;
+    loadStay22();
+  }));
+}
+function loadStay22(){
+  const s = C.dormire.stay22;
+  const rid = myRoute();
+  const p = C.percorsi.find(x=>x.id===rid);
+  setMyRoute(rid);
+  const lat = stayCenter ? stayCenter.lat : s.lat;
+  const lng = stayCenter ? stayCenter.lng : s.lng;
+  const gu = gpxUrl(rid);
+  // il GPX per Stay22 deve stare a un indirizzo pubblico HTTPS: da localhost la linea non compare
+  const gpxParam = gu
+    ? `&gpx=${encodeURIComponent(new URL(gu, location.href).href)}&gpxlinecolor=${p.colore.replace('#','')}&gpxlinethickness=4&gpxlineopacity=1.00`
+    : '';
+  const url = `https://www.stay22.com/embed/gm?aid=${s.aid}&campaign=${s.campaign}&lat=${lat}&lng=${lng}`+
+    `&checkin=${s.checkin}&checkout=${s.checkout}&maincolor=A80030&venue=${encodeURIComponent(s.venue)}&ljs=${U.stay22lang}`+
+    gpxParam + `&mapstyle=outdoors`;
+  $('#stay22wrap').innerHTML = `<iframe src="${url}" allow="geolocation" loading="lazy"></iframe>`;
+}
+
+/* ---------- LIVE ---------- */
+function renderLive(){
+  const l = C.live;
+  let h = `<div class="card"><h2>${icon('crosshair',22)} ${esc(l.gps.titolo)}</h2><p>${esc(l.gps.testo)}</p>
+    <p><label class="muted">${esc(U.mioPercorso)}</label>
+    <select id="gpsroute" style="font-size:14px;padding:6px 10px;border-radius:8px;border:1px solid var(--line)">
+      ${C.percorsi.map(p=>`<option value="${p.id}">${esc(p.nome)}</option>`).join('')}
+    </select></p>
+    <div class="btnrow"><button class="btn" id="gpsbtn">${esc(U.attivaGps)}</button></div>
+    <div id="gpsinfo"></div>
+    <div id="gpsahead"></div>
+    <div id="gpsmap" style="margin-top:10px;display:none"></div>
+    <div id="lv-wrap" style="display:none">
+      <div class="btnrow" id="lv-vista" style="margin:10px 0 0">
+        <button class="btn small sec on" data-lz="vicino">${fmt(esc(U.rv.prossimi), LV_FINESTRA)}</button>
+        <button class="btn small sec" data-lz="tutto">${esc(U.rv.tuttoIlPercorso)}</button>
+      </div>
+      <div id="lv-profwrap"><canvas id="lv-prof"></canvas><div id="lv-pins"></div><div id="lv-tip"></div></div>
+      <div id="lv-foot"></div>
+    </div></div>`;
+  h += `<div class="card" id="meteosec"><h3>${icon('cloud-sun-rain',20)} ${esc(U.meteoTitolo)}</h3>
+    <div class="btnrow"><button class="btn small" id="meteogpsbtn">${esc(U.meteoDoveSono)}</button></div>
+    <div id="meteogps"></div>
+    <h3 style="margin-top:16px">${esc(U.meteoLocalita)}</h3>
+    <p class="muted" id="meteonote"></p>
+    <div class="meteowrap"><table id="meteotab"></table></div>
+    <div class="sunset" id="sunsetbox">🌇 Calcolo l'orario del tramonto…</div></div>`;
+  $('#tab-live').innerHTML = h;
+  $('#gpsroute').value = myRoute();
+  $('#gpsroute').addEventListener('change', e=>{
+    setMyRoute(e.target.value); // aggiorna anche le pill in Dormire, non solo localStorage
+    /* Il percorso e' cambiato: via subito profilo e segni del percorso vecchio,
+       i nuovi arrivano col prossimo fix. Da fermi puo' tardare — meglio un
+       pannello vuoto che uno che dichiara il km del percorso sbagliato. */
+    lvRid = null; lvKm = null; gpsMkSig = null;
+    if (gpsMk && gpsMap){ gpsMap.removeLayer(gpsMk); gpsMk = null; }
+    const wrap = $('#lv-wrap');
+    if (wrap) wrap.style.display = 'none';
+    const aheadBox = $('#gpsahead');
+    if (aheadBox) aheadBox.style.display = 'none';
+    if (mapsInit.stay) loadStay22();
+  });
+  document.querySelectorAll('#lv-vista button').forEach(b => b.addEventListener('click', () => {
+    lvVista = b.dataset.lz;
+    document.querySelectorAll('#lv-vista button').forEach(x => x.classList.toggle('on', x === b));
+    $('#lv-tip').style.display = 'none';
+    if (lvRid && lvKm != null) lvAggiorna(lvRid, lvKm);
+  }));
+  $('#gpsbtn').addEventListener('click', startGPS);
+  $('#meteogpsbtn').addEventListener('click', meteoGPS);
+  $('#gpsinfo').addEventListener('click', e => { if (e.target.id === 'shareposbtn') sharePos(); });
+}
+
+/* ---------- METEO (Open-Meteo, gratuito, senza chiave) ---------- */
+function wIcon(code){
+  if (code === 0) return '☀️';
+  if (code <= 2) return '🌤️';
+  if (code === 3) return '☁️';
+  if (code <= 48) return '🌫️';
+  if (code <= 57) return '🌦️';
+  if (code <= 67) return '🌧️';
+  if (code <= 77) return '❄️';
+  if (code <= 82) return '🌧️';
+  if (code <= 86) return '🌨️';
+  return '⛈️';
+}
+function fmtDay(iso){
+  const d = new Date(iso + 'T12:00:00');
+  return U.giorniSett[d.getDay()] + ' ' + d.getDate() + '/' + (d.getMonth()+1);
+}
+function meteoDays(){
+  const todayIso = new Date().toISOString().slice(0,10);
+  const horizon = new Date(Date.now() + 14*864e5).toISOString().slice(0,10);
+  if (C.meteo.giorniEvento[0] <= horizon && C.meteo.giorniEvento[C.meteo.giorniEvento.length-1] >= todayIso){
+    return { days: C.meteo.giorniEvento.filter(d => d >= todayIso), nota: '' };
+  }
+  const days = [];
+  for (let i = 0; i < 6; i++) days.push(new Date(Date.now() + i*864e5).toISOString().slice(0,10));
+  return { days, nota: U.meteoNota };
+}
+async function loadMeteoTable(){
+  const { days, nota } = meteoDays();
+  $('#meteonote').textContent = nota;
+  const tab = $('#meteotab');
+  tab.innerHTML = '<tr><th class="loc"></th>' + days.map(d=>`<th>${fmtDay(d)}</th>`).join('') + '</tr>' +
+    C.meteo.localita.map((l,i)=>`<tr><td class="loc">${esc(l.nome)}</td>` +
+      days.map(()=>'<td>…</td>').join('') + '</tr>').join('');
+  await Promise.all(C.meteo.localita.map(async (l, li) => {
+    try {
+      const u = `https://api.open-meteo.com/v1/forecast?latitude=${l.lat}&longitude=${l.lng}` +
+        `&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Europe%2FRome` +
+        `&start_date=${days[0]}&end_date=${days[days.length-1]}`;
+      const r = await fetch(u).then(x=>x.json());
+      const row = tab.rows[li+1];
+      days.forEach((d, di) => {
+        const j = r.daily.time.indexOf(d);
+        row.cells[di+1].innerHTML = j < 0 ? '—' :
+          `<span class="wi">${wIcon(r.daily.weather_code[j])}</span>` +
+          `<span class="tt">${Math.round(r.daily.temperature_2m_min[j])}°/${Math.round(r.daily.temperature_2m_max[j])}°</span>`;
+      });
+    } catch(e){ /* offline: la tabella resta con i puntini */ }
+  }));
+}
+let sunsetCache = null;
+async function loadSunset(){
+  try {
+    if (!sunsetCache){
+      const u = `https://api.open-meteo.com/v1/forecast?latitude=43.029&longitude=10.601&daily=sunset&timezone=Europe%2FRome&forecast_days=1`;
+      const r = await fetch(u).then(x=>x.json());
+      sunsetCache = r.daily.sunset[0].slice(11,16);
+    }
+    const box = $('#sunsetbox');
+    if (box) box.innerHTML = fmt(U.tramonto, sunsetCache);
+    return sunsetCache;
+  } catch(e){ const box = $('#sunsetbox'); if (box) box.textContent = U.tramontoOffline; }
+}
+async function meteoGPS(){
+  const box = $('#meteogps');
+  box.style.display = 'block';
+  if (!navigator.geolocation){ box.textContent = U.gpsNo; return; }
+  box.textContent = U.gpsCerco;
+  navigator.geolocation.getCurrentPosition(async pos => {
+    try {
+      const u = `https://api.open-meteo.com/v1/forecast?latitude=${pos.coords.latitude}&longitude=${pos.coords.longitude}` +
+        `&current=temperature_2m,weather_code,wind_speed_10m,precipitation` +
+        `&hourly=precipitation_probability&daily=sunset&timezone=Europe%2FRome&forecast_days=1`;
+      const r = await fetch(u).then(x=>x.json());
+      const c = r.current;
+      const hNow = new Date().getHours();
+      const prob = r.hourly && r.hourly.precipitation_probability ? r.hourly.precipitation_probability[hNow] : null;
+      const sunset = r.daily && r.daily.sunset ? r.daily.sunset[0].slice(11,16) : null;
+      box.innerHTML = `<b>${wIcon(c.weather_code)} ${Math.round(c.temperature_2m)}°C</b> ${esc(U.meteoAdesso)} · ${esc(U.vento)} ${Math.round(c.wind_speed_10m)} km/h` +
+        (prob !== null ? ` · ${esc(U.pioggia)} ${prob}%` : '') +
+        (sunset ? `<br/>${esc(U.tramontaQui)} <b>${sunset}</b>.` : '');
+    } catch(e){ box.textContent = U.meteoOffline; }
+  }, () => { box.textContent = U.gpsNegato; },
+  {enableHighAccuracy:false, maximumAge:60000, timeout:15000});
+}
+/* ---------- altimetria e punti nel Live ----------
+   Mentre pedali la domanda e' "che salita ho davanti e dove bevo", quindi il
+   profilo mostra una finestra attorno a dove sei invece di tutto il tracciato.
+   Il tasto per vedere l'intero percorso resta, ma non e' quello che serve in
+   sella. I segni sulla mappa sono gli stessi della vista percorso. */
+const LV_FINESTRA = 25;   // km davanti mostrati
+const LV_INDIETRO = 3;    // km dietro, per capire da dove arrivi
+let lvRid = null, lvKm = null, lvLontano = false, lvVista = 'vicino', gpsMk = null, gpsMkSig = null, lvTipTimer = null;
+function lvFinestra(g, km){
+  if (lvVista === 'tutto') return [0, g.kmTot];
+  // vicino all'arrivo la finestra non si restringe sotto i 12 km: una striscia
+  // di 3 km spalmata su tutto il canvas non si legge
+  const a = Math.min(g.kmTot, km + LV_FINESTRA);
+  const da = Math.max(0, Math.min(km - LV_INDIETRO, a - 12));
+  return [da, a];
+}
+function lvAggiorna(rid, km){
+  // lo stato si salva SEMPRE, anche a tab nascosta: e' quello che permette a
+  // openTab('live') e al resize di ridisegnare al rientro
+  lvRid = rid; lvKm = km;
+  const wrap = $('#lv-wrap');
+  if (!wrap) return;
+  if (!$('#tab-live').classList.contains('on')) return; // si ridisegna al rientro
+  wrap.style.display = 'block';
+  $('#lv-tip').style.display = 'none'; // la finestra scorre, il tip vecchio non punta piu' li'
+  const g = routeGeom(rid);
+  const [da, a] = lvFinestra(g, km);
+  if (!profDisegna(lvProf, g, da, a, km)) return;
+  profPin(lvProf, g, poiDi(rid), 'tutti', gr => lvTip(gr));
+  const i = g.idxFromKm(km);
+  /* Da lontano (test da casa, viaggio verso l'evento) il pannello resta
+     visibile e cambia solo la prima riga: "punto piu' vicino del percorso"
+     invece di "sei al km". Nasconderlo del tutto, come faceva la prima
+     versione di questa correzione, faceva sembrare l'app rotta a chiunque
+     la provasse prima di partire — cioe' a quasi tutti. */
+  $('#lv-foot').innerHTML =
+    `<span>${fmt(esc(lvLontano ? U.rv.lontanoKm : U.rv.seiQui), '<b>'+kmDec(km)+'</b>', g.ele[i])}</span>` +
+    `<span>${fmt(esc(U.rv.daQui), Math.round(g.kmTot-km), g.dplusFrom[i])}</span>`;
+}
+function lvTip(gr){
+  const g = routeGeom(lvRid), tip = $('#lv-tip');
+  const at = lvProf.tipXY(gr.capo.km, g.ele[g.idxFromKm(gr.capo.km)]);
+  tip.style.display = 'block';
+  tip.style.left = at.x + 'px';
+  tip.style.top = at.y + 'px';
+  const via = Math.round(gr.capo.km - (lvKm || 0));
+  tip.innerHTML = `<b>${gruppoLabel(gr)}</b><br/>` +
+    (via > 0 ? `${esc(U.tra)} <b>${via}</b> ${esc(U.km)} · ` : '') + `km ${Math.round(gr.capo.km)}`;
+  clearTimeout(lvTipTimer);
+  lvTipTimer = setTimeout(() => { tip.style.display = 'none'; }, 4000);
+}
+function lvPoiMappa(){
+  if (!gpsMap || !lvRid) return;
+  if (!$('#tab-live').classList.contains('on')) return; // mappa nascosta: bounds degeneri, lavoro inutile
+  if (gpsMap._fumettoAperto) return; // si ricostruisce alla chiusura del fumetto
+  const sig = lvRid + '|' + gpsMap.getBounds().toBBoxString();
+  if (sig === gpsMkSig) return; // stessa vista, stesso percorso: i segni sono gia' giusti
+  gpsMkSig = sig;
+  if (gpsMk) gpsMap.removeLayer(gpsMk);
+  gpsMk = poiSuMappa(gpsMap, routeGeom(lvRid), poiDi(lvRid), 'tutti');
+}
+let gpsMap, gpsMarker, gpsLine, gpsLineRoute, gpsWatch, gpsArrows, gpsArrowsRoute, lastPos = null, autoShare = false;
+function sharePos(){
+  if (!lastPos) return;
+  const url = `https://maps.google.com/?q=${lastPos[0].toFixed(5)},${lastPos[1].toFixed(5)}`;
+  const text = `${U.condividiTesto} — ${url}`;
+  if (navigator.share) navigator.share({text}).catch(()=>{});
+  else window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
+}
+function haversine(a, b){
+  const R=6371, rad=Math.PI/180;
+  const la1=a[0]*rad, la2=b[0]*rad, dla=la2-la1, dlo=(b[1]-a[1])*rad;
+  const h=Math.sin(dla/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dlo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function aheadHtml(rid, km){
+  const list = (window.POI && POI[rid]) || [];
+  const ahead = list.filter(e => e.km > km + 0.2);
+  if (!ahead.length) return '';
+  const w = ahead.find(e => e.t === 'a' || (e.t === 'c' && e.nf > 0));
+  const f = ahead.find(e => e.t === 'm' || (e.t === 'c' && e.ne > 0));
+  const ss = ahead.filter(e => e.t === 'd' || (e.t === 'c' && e.ns > 0)).slice(0, 2);
+  const row = (ico, cls, e, label, book) =>
+    `<div class="poirow"><span class="poiico ${cls}">${ico}</span><span>${label} <b>${esc(U.tra)} ${Math.max(1, Math.round(e.km - km))} ${esc(U.km)}</b>
+     <span class="muted">(km ${Math.round(e.km)})</span></span>${book ? bookBtn(e) : ''}</div>`;
+  let h = `<b>${esc(U.davanti)}</b>`;
+  if (w) h += row(icon('droplets',16), 't-a', w, w.t === 'c' ? esc(w.nome) + ` (${w.nf} ${esc(U.fontane)})` : (w.n > 1 ? `${w.n} ${esc(U.fontane)}` : esc(U.fontana)), false);
+  if (f) h += row(icon('utensils',16), 't-m', f, f.t === 'c' ? esc(f.nome) + ` (${f.ne} ${esc(U.posti)})` : esc(f.nome || subLingua(f.sub)), false);
+  ss.forEach(e => h += row(icon('bed-double',16), 't-d', e, e.t === 'c' ? esc(e.nome) + ` (${e.ns} ${esc(U.alloggi)})` : esc(e.nome || subLingua(e.sub)), true));
+  return h;
+}
+function startGPS(){
+  openTab('live');
+  const info = $('#gpsinfo');
+  info.style.display = 'block';
+  if (!TRACKS[$('#gpsroute').value]){ info.textContent = U.inArrivo.live; return; }
+  if (!navigator.geolocation){ info.textContent = U.gpsNo; return; }
+  info.textContent = U.gpsCerco;
+  if (gpsWatch) navigator.geolocation.clearWatch(gpsWatch);
+  gpsWatch = navigator.geolocation.watchPosition(pos=>{
+    const me = [pos.coords.latitude, pos.coords.longitude];
+    lastPos = me;
+    if (autoShare){ autoShare = false; sharePos(); }
+    const rid = $('#gpsroute').value;
+    const p = C.percorsi.find(x=>x.id===rid);
+    const g = routeGeom(rid);
+    const track = g.ll;
+    // punto più vicino + km percorso
+    let best=0, bd=Infinity;
+    for (let i=0;i<track.length;i++){
+      const d = (track[i][0]-me[0])**2 + ((track[i][1]-me[1])*Math.cos(me[0]*Math.PI/180))**2;
+      if (d<bd){bd=d; best=i;}
+    }
+    /* Il km lo da' routeGeom, non la somma della traccia semplificata. Quella
+       misura il 2-3% in meno del GPX da cui vengono i km dei POI: sul Lungo a
+       tre quarti di percorso l'errore era 8,8 km e a fine percorso 11,4, quindi
+       il riquadro "davanti a te" proponeva fontane gia' passate. */
+    const km = g.kmAt[best];
+    const distTrack = haversine(me, track[best]);
+    const kmTot = p.km;
+    const lontano = distTrack > 3;
+    if (lontano){
+      info.innerHTML = fmt(esc(U.gpsLontano), `<b>${kmDec(distTrack)}</b>`, esc(p.nome), `<b>${km.toFixed(0)}</b>`);
+    } else {
+      info.innerHTML = fmt(esc(U.gpsPosizione), `<b>${km.toFixed(0)}</b>`, kmTot, esc(p.nome), `<b>${Math.max(0,kmTot-km).toFixed(0)}</b>`);
+    }
+    info.innerHTML += `<div style="margin-top:7px"><button class="btn small sec" id="shareposbtn">${esc(U.condividiPos)}</button></div>`;
+    /* "Davanti a te" e profilo restano visibili ANCHE da lontano, calcolati dal
+       punto piu' vicino del percorso. La prima versione di questa correzione li
+       nascondeva oltre i 3 km per non dichiarare una posizione falsa, ma da
+       casa — cioe' dove tutti provano l'app prima dell'evento — il pannello
+       vuoto sembrava un'app rotta (visto succedere ad Andrea, 13 ago). La
+       verita' la dicono i testi: il messaggio qui sopra e la riga del profilo
+       parlano di "punto piu' vicino del percorso", non di "sei al km". */
+    const aheadBox = $('#gpsahead');
+    const ah = aheadHtml(rid, km);
+    if (ah){ aheadBox.style.display = 'block'; aheadBox.innerHTML = ah; bindBook(aheadBox); }
+    else aheadBox.style.display = 'none';
+    const mapEl = $('#gpsmap');
+    mapEl.style.display = 'block';
+    if (!gpsMap){
+      gpsMap = L.map('gpsmap');
+      L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© CyclOSM · © OpenStreetMap'}).addTo(gpsMap);
+      gpsMap.on('moveend', lvPoiMappa);
+      agganciaPopup(gpsMap, lvPoiMappa);
+    }
+    if (gpsLineRoute !== rid){
+      if (gpsLine) gpsMap.removeLayer(gpsLine);
+      gpsLine = L.polyline(track,{color:p.colore,weight:4}).addTo(gpsMap);
+      gpsLineRoute = rid;
+    }
+    if (gpsArrowsRoute !== rid){
+      if (gpsArrows) gpsMap.removeLayer(gpsArrows);
+      gpsArrows = arrowLayer(track, p.colore, 10).addTo(gpsMap);
+      gpsArrowsRoute = rid;
+    }
+    if (gpsMarker) gpsMap.removeLayer(gpsMarker);
+    gpsMarker = L.circleMarker(me,{radius:9,color:'#fff',weight:2.5,fillColor:'#1971c2',fillOpacity:1}).addTo(gpsMap).bindPopup(U.gpsQui);
+    /* Ricentra solo al primo fix o quando la posizione esce dall'inquadratura.
+       Ricentrare a ogni fix rendeva impossibile spostare la mappa a mano — la
+       riportava indietro dopo pochi secondi — e ogni ricentraggio ricostruiva
+       i segni per pochi metri di movimento. */
+    if (gpsMap.getZoom() == null) gpsMap.setView(me, 13);
+    else if (!gpsMap.getBounds().pad(-0.2).contains(me)) gpsMap.setView(me, gpsMap.getZoom(), {animate:false});
+    // lvAggiorna salva lvRid/lvKm (anche a tab nascosta), poi i segni sulla mappa
+    lvLontano = lontano;
+    lvAggiorna(rid, km);
+    lvPoiMappa();
+  }, err=>{
+    info.textContent = U.gpsNegato;
+  }, {enableHighAccuracy:true, maximumAge:10000, timeout:15000});
+}
+
+/* ---------- SPONSOR ---------- */
+if (C.sponsor.lista && C.sponsor.lista.length)
+$('#sponsorbar').innerHTML = `<h3>${esc(C.sponsor.titolo)}</h3><div class="sprow">` +
+  C.sponsor.lista.map(s=>`<div class="sp"><b>${esc(s.nome)}</b><span>${esc(s.ruolo)}</span></div>`).join('') + `</div>`;
+
+/* ---------- CERCA GLOBALE ---------- */
+const INDEX = [];
+C.infoCards.forEach(c=>INDEX.push({tab:'info', el:'info-'+c.id, t:c.titolo, s:c.corpo.slice(0,90)+'…', k:(c.titolo+' '+c.corpo+' '+c.cerca).toLowerCase()}));
+C.percorsi.forEach(p=>INDEX.push({tab:'percorso', t:p.nome, s:`${statPercorso(p)} · ${p.livello}`, k:(p.nome+' '+p.desc+' '+p.note.join(' ')+' percorso traccia gpx km dislivello').toLowerCase()}));
+INDEX.push({tab:'dormire', t:U.searchExtra.dormire.t, s:U.searchExtra.dormire.s, k:U.searchExtra.dormire.k});
+INDEX.push({tab:'live', t:U.searchExtra.live.t, s:U.searchExtra.live.s, k:U.searchExtra.live.k});
+INDEX.push({tab:'home', t:U.searchExtra.prep.t, s:U.searchExtra.prep.s, k:U.searchExtra.prep.k});
+
+$('#searchbtn').addEventListener('click',()=>{ $('#searchov').classList.add('open'); $('#searchinput').focus(); });
+$('#searchov').addEventListener('click',e=>{ if(e.target.id==='searchov') $('#searchov').classList.remove('open'); });
+$('#searchinput').addEventListener('input',e=>{
+  const q = e.target.value.trim().toLowerCase();
+  const box = $('#searchres');
+  if (!q){ box.innerHTML=''; return; }
+  const hits = INDEX.filter(i=>q.split(/\s+/).every(w=>i.k.includes(w))).slice(0,8);
+  box.innerHTML = hits.length
+    ? hits.map((h,i)=>`<div class="sres" data-i="${INDEX.indexOf(h)}"><b>${esc(h.t)}</b><span>${esc(h.s)}</span></div>`).join('')
+    : `<div class="snull">${esc(U.cercaNulla)}</div>`;
+  box.querySelectorAll('.sres').forEach(r=>r.addEventListener('click',()=>{
+    const h = INDEX[+r.dataset.i];
+    $('#searchov').classList.remove('open');
+    openTab(h.tab);
+    if (h.el){ const el = document.getElementById(h.el);
+      if (el){ setTimeout(()=>el.scrollIntoView({behavior:'smooth',block:'center'}),150); } }
+  }));
+});
+
+/* ---------- avvio: testi statici in lingua ---------- */
+(function(){
+  const g = U.gate;
+  $('#gatetesto').innerHTML = esc(g.testo).replace('|', '<br/>');
+  $('#gatecode').placeholder = g.placeholder;
+  $('#gatebtn').textContent = g.bottone;
+  $('#iostitolo').textContent = U.installa.iosTitolo;
+  $('#iospassi').innerHTML = U.installa.iosPassi.map((p, i) =>
+    `<div class="step"><span class="n">${i+1}</span><span>${p}</span></div>`).join('');
+  $('#iosclose').textContent = U.installa.iosFatto;
+  document.querySelectorAll('.tlbl').forEach(el => el.textContent = U.tabs[el.dataset.t]);
+  $('#legenda').textContent = U.legenda;
+  $('#searchinput').placeholder = U.cercaGlobale;
+  const BANDIERE = {
+    it: '<svg class="flag" viewBox="0 0 3 2"><rect width="1" height="2" fill="#009246"/><rect x="1" width="1" height="2" fill="#F1F2F1"/><rect x="2" width="1" height="2" fill="#CE2B37"/></svg>',
+    en: '<svg class="flag" viewBox="0 0 30 20"><rect width="30" height="20" fill="#00247d"/><path d="M0,0 30,20M30,0 0,20" stroke="#fff" stroke-width="4"/><path d="M0,0 30,20M30,0 0,20" stroke="#cf142b" stroke-width="1.6"/><path d="M15,0V20M0,10H30" stroke="#fff" stroke-width="6"/><path d="M15,0V20M0,10H30" stroke="#cf142b" stroke-width="3.6"/></svg>'
+  };
+  $('#langsw').innerHTML = ['it','en'].map(l =>
+    `<button type="button" class="${l===LANG?'on':''}" data-lang="${l}">${BANDIERE[l]}<span class="lbl">${l.toUpperCase()}</span></button>`).join('');
+  document.querySelectorAll('#langsw button').forEach(el => el.addEventListener('click', () => {
+    if (el.dataset.lang !== LANG){ localStorage.setItem('tt-lang', el.dataset.lang); location.reload(); }
+  }));
+  document.querySelectorAll('nav button .e').forEach(el => {
+    const map = {home:'house', percorso:'route', info:'info', dormire:'bed-double', live:'satellite'};
+    el.innerHTML = icon(map[el.closest('button').dataset.tab], 19);
+  });
+  $('#searchbtn').innerHTML = icon('search', 17) + '<span class="dot"></span>';
+  $('#iosmodal-icon').innerHTML = icon('smartphone', 20);
+  $('#gatekicker').textContent = C.meta.sottotitolo;
+  $('#homelogo').addEventListener('click', () => openTab('home'));
+})();
+initGate();
+renderHome(); renderPercorso(); renderInfo(); renderDormire(); renderLive();
+paintDemo(); openTab('home');
+const tabRichiesta = new URLSearchParams(location.search).get('tab');
+if (['home','percorso','info','dormire','live'].includes(tabRichiesta)) openTab(tabRichiesta);
+if ('serviceWorker' in navigator) {
+  // se arriva una versione nuova mentre l'app è aperta, si ricarica da sola
+  const avevaSW = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (avevaSW && !window._ttReload) { window._ttReload = true; location.reload(); }
+  });
+}
+</script>
+</body>
+</html>

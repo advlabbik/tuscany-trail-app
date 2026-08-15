@@ -1,0 +1,61 @@
+// Service worker: le info chiave restano consultabili anche senza segnale.
+// Strategia: network-first per i file dell'app (chi ha rete vede SEMPRE l'ultima
+// versione, senza doppia apertura), cache come rete di salvataggio quando il
+// segnale manca. Le tile mappa, il meteo e Stay22 non passano di qui.
+// Le notifiche push del sistema tg-guida NON sono qui: quando serviranno si
+// riprendono da advlabbik/tg-guida (sw.js + index.html + supabase/ + staff.html)
+// con un progetto Supabase dedicato al Tuscany Trail.
+const CACHE = 'tt-app-v1';
+const ASSETS = [
+  './', './index.html', './content.js', './tracks.js', './poi.js',
+  './styles.css', './icons.js', './icons/sprite.svg',
+  './assets/tt-logo.png', './assets/tt-logo-white.png', './assets/tt-emblema.png',
+  './icons/icon-192.png', './icons/icon-512.png',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(keys =>
+    Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+  ).then(() => self.clients.claim()));
+});
+
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+  // servizi esterni dinamici: sempre rete diretta, mai cache
+  if (url.hostname.includes('arcgisonline') || url.hostname.includes('openstreetmap') ||
+      url.hostname.includes('opentopomap') || url.hostname.includes('stay22') ||
+      url.hostname.includes('open-meteo')) return;
+
+  const sameApp = url.origin === location.origin;
+  if (sameApp) {
+    // network-first: la versione online vince sempre, la cache copre l'assenza di segnale
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res && res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return res;
+      }).catch(() => caches.match(e.request).then(hit => hit || caches.match('./index.html')))
+    );
+    return;
+  }
+  // librerie e font esterni versionati: cache-first, non cambiano mai
+  e.respondWith(
+    caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
+      if (res && res.ok && (url.hostname === 'unpkg.com' ||
+          url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com')) {
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+      }
+      return res;
+    }))
+  );
+});
