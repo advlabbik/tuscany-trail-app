@@ -103,3 +103,12 @@ Non sono in questa app. Il sistema di Francesco (opt-in Web Push + pannello staf
 - Bumpare sempre `CACHE` in `sw.js` quando si modificano i file, altrimenti chi ha l'app installata resta indietro di una versione.
 - Le chiavi `localStorage` sono prefissate **`tt-`**: tg-guida e questa app condividono l'origin `advlabbik.github.io`, con lo stesso prefisso si pesterebbero i piedi.
 - Frecce direzionali dentro la mappa Stay22: già provate e scartate su tg-guida (Stay22 le rende come pallini) — non rifarle senza un'idea diversa.
+
+## Decisioni ecosistema — 16 agosto 2026
+
+Analisi completa dei 4 progetti digitali e registro decisioni con le motivazioni nella pagina Notion [Ecosistema App BAS — analisi e registro decisioni](https://app.notion.com/p/3bef88ad0121819487aceb41d1a89781). Qui solo ciò che tocca questo repo.
+
+- **POI Partner €300+IVA** — nuovo prodotto. POI evidenziato (campo `partner` + `url` nel modello POI, badge in lista/mappa/viewer) e **priorità nel blocco "Davanti a te" della Live** — il partner prende uno dei 2 slot dormire quando il rider gli sta pedalando incontro. Regole non negoziabili — l'altro slot resta sempre al posto più vicino reale, l'acqua non si sponsorizza mai, badge "Partner" sempre visibile, massimo 2-3 partner per zona; il bottone del partner porta al suo sito con UTM, i non-partner tengono Stay22. Perché — ~60 attività auto-candidate in Notion mai lavorate; l'integrità del blocco è l'asset che rende vendibile tutto il resto.
+- **Carnet "Diario di viaggio"** — 6-8 timbri nei luoghi iconici con timestamp (vista Carnet da portare da northcape4000-app), attestato finisher self-service a fine evento e card condivisibile per timbro. Niente tempi totali né classifiche — il TT non è una gara.
+- **Fase "dopo"** — card cross-sell verso Trentino Gravel 2027 + waitlist; un solo link commerciale (regola del doc Motore Vendita Ripetuta — il catalogo diluisce).
+- **"Arriva preparato"** — quando arrivano link e codici sponsor, UTM per sponsor su ogni link (report al rinnovo) e scadenze come campi, mai nel testo.
