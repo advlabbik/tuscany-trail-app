@@ -103,6 +103,7 @@ Non sono in questa app. Il sistema di Francesco (opt-in Web Push + pannello staf
 - Bumpare sempre `CACHE` in `sw.js` quando si modificano i file, altrimenti chi ha l'app installata resta indietro di una versione.
 - Le chiavi `localStorage` sono prefissate **`tt-`**: tg-guida e questa app condividono l'origin `advlabbik.github.io`, con lo stesso prefisso si pesterebbero i piedi.
 - Frecce direzionali dentro la mappa Stay22: già provate e scartate su tg-guida (Stay22 le rende come pallini) — non rifarle senza un'idea diversa.
+- **Marker delle mappe — regola condivisa con tutti i progetti BAS** (imparata a spese di `cycling-in-tuscany`, due bug identici il 18/8/2026). Il posizionamento del marker lo fa la libreria con una sua classe (`.leaflet-marker-icon` qui, `.maplibregl-marker` in MapLibre): **mai dichiarare `position`** sull'elemento passato al marker e **mai riassegnare `className`** su un marker già sulla mappa — l'attributo intero cancella le classi della libreria. Solo `classList.add/remove/toggle`. Sintomo: i pin lasciano il tracciato, vanno **in diagonale** e finiscono fuori mappa (in mare, sulla costa toscana). Qui non capita perché al cambio filtro si ricostruiscono i layer: **è il metodo giusto, tenerlo.** Spiegazione estesa nel README di `advlabbik/cycling-in-tuscany`.
 
 ## Decisioni ecosistema — 16 agosto 2026
 
