@@ -105,6 +105,18 @@ Non sono in questa app. Il sistema di Francesco (opt-in Web Push + pannello staf
 - Frecce direzionali dentro la mappa Stay22: già provate e scartate su tg-guida (Stay22 le rende come pallini) — non rifarle senza un'idea diversa.
 - **Marker delle mappe — regola condivisa con tutti i progetti BAS** (imparata a spese di `cycling-in-tuscany`, due bug identici il 18/8/2026). Il posizionamento del marker lo fa la libreria con una sua classe (`.leaflet-marker-icon` qui, `.maplibregl-marker` in MapLibre): **mai dichiarare `position`** sull'elemento passato al marker e **mai riassegnare `className`** su un marker già sulla mappa — l'attributo intero cancella le classi della libreria. Solo `classList.add/remove/toggle`. Sintomo: i pin lasciano il tracciato, vanno **in diagonale** e finiscono fuori mappa (in mare, sulla costa toscana). Qui non capita perché al cambio filtro si ricostruiscono i layer: **è il metodo giusto, tenerlo.** Spiegazione estesa nel README di `advlabbik/cycling-in-tuscany`.
 
+## A cosa servono le app degli eventi (Andrea, 19 agosto 2026)
+
+Cornice valida per tutte le app evento BAS, comprese quelle non ancora nate — da rileggere prima di aggiungere o togliere qualcosa.
+
+L'app serve a **restare attaccati al cliente dal momento dell'iscrizione fino alla fine dell'evento**. In quella finestra il partecipante ci dà la sua attenzione, che è la cosa più preziosa che ha, e non ce la dà nessun altro canale. Quell'attenzione si spende **bilanciando utilità e vendita**.
+
+- **Utilità** — dentro ci devono essere tutte le informazioni e gli strumenti per arrivare preparati e vivere al meglio la propria avventura in bicicletta. È la parte che si guadagna l'attenzione; senza, l'app non viene aperta e non c'è niente da bilanciare.
+- **Vendita** — chi è già dentro deve poter spendere altri soldi con noi, in tre modi soltanto — fargli **scoprire un altro evento**, **agganciarlo alla Bike Adventure Series** (la serie, non il singolo evento), oppure **tutti e due insieme**, per esempio la BAS presentata con il link a un articolo che gli è davvero utile. Il contenuto utile è il veicolo della vendita, non il suo contorno.
+- **B2B con intelligenza** — i partner entrano dentro un punto di forza per chi pedala, mai come cartellone. Qui sono la lista della spesa di «Arriva preparato» con gli 8 sponsor in evidenza, i territori e i POI partner sulla mappa e nel blocco «Davanti a te» della Live.
+
+L'utilità non arretra mai per far posto a chi paga (regola D6 del registro). Ragionamento esteso e decisione **D17** nella pagina Notion linkata qui sotto.
+
 ## Decisioni ecosistema — 16 agosto 2026
 
 Analisi completa dei 4 progetti digitali e registro decisioni con le motivazioni nella pagina Notion [Ecosistema App BAS — analisi e registro decisioni](https://app.notion.com/p/3bef88ad0121819487aceb41d1a89781). Qui solo ciò che tocca questo repo.

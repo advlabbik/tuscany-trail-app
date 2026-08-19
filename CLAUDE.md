@@ -2,6 +2,10 @@
 
 Questa app è derivata da `advlabbik/tg-guida` e ne eredita metodo di lavoro e trappole. Le regole sotto sono già costate tempo reale su quel repo: qui si applicano dal giorno uno.
 
+## La bussola — a cosa serve quest'app
+
+Prima di aggiungere, togliere o riprogettare qualcosa, rileggere «A cosa servono le app degli eventi» nel `README.md`. In breve — l'app tiene il filo col cliente dall'iscrizione alla fine dell'evento, e trasforma quell'attenzione **bilanciando utilità e vendita**: utilità = tutto ciò che serve per arrivare preparati e vivere al meglio l'avventura; vendita = solo tre strade (scoprire un altro evento, agganciarsi alla serie BAS, i due insieme con un contenuto utile come veicolo); più la superficie B2B, dove sponsor e territori entrano **dentro** una funzione utile (lista della spesa, POI partner) e mai come cartellone. L'utilità non arretra mai per far posto a chi paga.
+
 ## Tenere README.md e issue GitHub aggiornati — non è opzionale
 
 Ogni volta che una sessione su questo repo:
