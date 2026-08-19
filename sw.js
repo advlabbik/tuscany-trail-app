@@ -5,7 +5,7 @@
 // Le notifiche push del sistema tg-guida NON sono qui: quando serviranno si
 // riprendono da advlabbik/tg-guida (sw.js + index.html + supabase/ + staff.html)
 // con un progetto Supabase dedicato al Tuscany Trail.
-const CACHE = 'tt-app-v1';
+const CACHE = 'tt-app-v2';
 const ASSETS = [
   './', './index.html', './content.js', './tracks.js', './poi.js',
   './styles.css', './icons.js', './icons/sprite.svg',

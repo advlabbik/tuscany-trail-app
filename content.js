@@ -101,6 +101,11 @@ percorsi: [
     note: ["Il Detour non è un obbligo, è un regalo"] }
 ],
 
+/* Live tracking WHIP. Embed identico a quello della home di northcape4000.com
+   (iframe verso www.whip.live/event-tracking/<CODICE>, nessun X-Frame-Options).
+   Stringa vuota = la finestra non compare per niente. */
+whipUrl: "",
+
 infoCards: [
   { id: "certificato", tema: "Prima di partire", icona: "🩺", titolo: "Certificato medico",
     corpo: "Non serve al momento dell'iscrizione. Si carica nella tua area personale su bikeadventureseries.com a partire dal 10 dicembre, nella sezione Certificati.",
@@ -164,9 +169,15 @@ infoCards: [
 ],
 
 live: {
+  whip: {
+    titolo: "Dove sono gli altri",
+    testo: "La mappa del live tracking ufficiale. Vedi in tempo reale dove sono i partecipanti lungo il percorso.",
+    nota: "",
+    apri: "Apri a schermo intero"
+  },
   gps: {
     titolo: "Dove sono?",
-    testo: "Attiva il GPS del telefono e la guida ti dice a che chilometro sei, cosa hai davanti — acqua, cibo, alloggi — e ti fa condividere la posizione con un tocco."
+    testo: "Attiva il GPS del telefono e la guida ti dice a che chilometro sei, cosa hai davanti — acqua, cibo, alloggi — che tempo fa dove sei, e ti fa condividere la posizione con un tocco."
   }
 },
 
@@ -382,6 +393,11 @@ percorsi: [
     note: ["The Detour is not an obligation, it is a gift"] }
 ],
 
+/* Live tracking WHIP. Embed identico a quello della home di northcape4000.com
+   (iframe verso www.whip.live/event-tracking/<CODICE>, nessun X-Frame-Options).
+   Stringa vuota = la finestra non compare per niente. */
+whipUrl: "",
+
 infoCards: [
   { id: "certificato", tema: "Before you leave", icona: "🩺", titolo: "Medical certificate",
     corpo: "You do not need it to register. You upload it in your personal area on bikeadventureseries.com starting 10 December, in the Certificates section.",
@@ -445,9 +461,15 @@ infoCards: [
 ],
 
 live: {
+  whip: {
+    titolo: "Where everyone else is",
+    testo: "The official live tracking map. See in real time where the riders are along the route.",
+    nota: "",
+    apri: "Open full screen"
+  },
   gps: {
     titolo: "Where am I?",
-    testo: "Turn on your phone's GPS and the guide tells you which kilometre you are at, what lies ahead — water, food, places to sleep — and lets you share your position with one tap."
+    testo: "Turn on your phone's GPS and the guide tells you which kilometre you are at, what lies ahead — water, food, places to sleep — the weather where you are, and lets you share your position with one tap."
   }
 },
 

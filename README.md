@@ -105,6 +105,27 @@ Non sono in questa app. Il sistema di Francesco (opt-in Web Push + pannello staf
 - Frecce direzionali dentro la mappa Stay22: già provate e scartate su tg-guida (Stay22 le rende come pallini) — non rifarle senza un'idea diversa.
 - **Marker delle mappe — regola condivisa con tutti i progetti BAS** (imparata a spese di `cycling-in-tuscany`, due bug identici il 18/8/2026). Il posizionamento del marker lo fa la libreria con una sua classe (`.leaflet-marker-icon` qui, `.maplibregl-marker` in MapLibre): **mai dichiarare `position`** sull'elemento passato al marker e **mai riassegnare `className`** su un marker già sulla mappa — l'attributo intero cancella le classi della libreria. Solo `classList.add/remove/toggle`. Sintomo: i pin lasciano il tracciato, vanno **in diagonale** e finiscono fuori mappa (in mare, sulla costa toscana). Qui non capita perché al cambio filtro si ricostruiscono i layer: **è il metodo giusto, tenerlo.** Spiegazione estesa nel README di `advlabbik/cycling-in-tuscany`.
 
+## Live — il GPS accende anche il meteo, e la finestra WHIP (19 agosto 2026)
+
+Due modifiche decise da Andrea, uguali in tutte le app della famiglia.
+
+**Un tocco solo per posizione e meteo.** Il tasto *Attiva il GPS* del pannello
+"Dove sono?" ora chiama anche `meteoGPS()`. Il permesso di posizione e' lo stesso,
+chiederlo due volte era lavoro inutile per chi e' in sella. `meteoGPS()` scrive in
+due riquadri quando ci sono — `#gpsmeteo`, dentro il pannello GPS, e `#meteogps`,
+nella card Meteo piu' in basso — passando dai setter `box.testo` / `box.html`.
+Il testo del pannello lo dice, in italiano e in inglese.
+
+**Finestra WHIP nel Live.** Card `#whipsec` con l'iframe del live tracking
+ufficiale, lo stesso embed usato sulla home di northcape4000.com
+(`https://www.whip.live/event-tracking/<CODICE>`; verificato il 19/8 che non manda
+ne' `X-Frame-Options` ne' `frame-ancestors`, quindi si incorpora ovunque).
+L'URL sta in `content.js` come `whipUrl`, **una riga per lingua**: se e' stringa
+vuota la card non viene proprio generata, cosi' un evento senza codice non mostra
+una pagina rotta. Testi in `live.whip` (titolo, testo, nota, apri).
+
+**Codice evento** — `whipUrl` e' vuoto, quindi oggi la card non compare. Si accende scrivendoci il codice WHIP del Tuscany Trail 2027 quando esiste.
+
 ## A cosa servono le app degli eventi (Andrea, 19 agosto 2026)
 
 Cornice valida per tutte le app evento BAS, comprese quelle non ancora nate — da rileggere prima di aggiungere o togliere qualcosa.
